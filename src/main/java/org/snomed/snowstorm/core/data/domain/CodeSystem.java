@@ -23,7 +23,7 @@ import static org.snomed.snowstorm.fhir.config.FHIRConstants.SNOMED_URI;
  * Represents an edition or extension of SNOMED-CT
  */
 @Document(indexName = "#{@indexNameProvider.indexName('codesystem')}", createIndex = false)
-@JsonPropertyOrder({"name", "owner", "shortName", "branchPath", "dependantVersionEffectiveTime", "dailyBuildAvailable", "latestDailyBuild",
+@JsonPropertyOrder({"name", "owner", "shortName", "branchPath", "uriModuleId", "uri", "dependantVersionEffectiveTime", "dailyBuildAvailable", "latestDailyBuild",
 		"postcoordinated", "postcoordinationLevel", "countryCode", "defaultLanguageCode", "defaultLanguageReferenceSets", "maintainerType",
 		"latestVersion", "languages", "modules"})
 public class CodeSystem implements CodeSystemCreate {

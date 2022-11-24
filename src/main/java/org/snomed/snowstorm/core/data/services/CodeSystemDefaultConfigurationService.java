@@ -3,6 +3,7 @@ package org.snomed.snowstorm.core.data.services;
 import org.snomed.snowstorm.core.data.services.pojo.CodeSystemDefaultConfiguration;
 
 import jakarta.annotation.PostConstruct;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -16,6 +17,15 @@ public class CodeSystemDefaultConfigurationService {
 
 	public Map<String, String> getConfig() {
 		return config;
+	}
+
+	public CodeSystemDefaultConfiguration findByModule(String moduleId) {
+		for (CodeSystemDefaultConfiguration codeSystemConfiguration : configurations) {
+			if (codeSystemConfiguration.module().equals(moduleId)) {
+				return codeSystemConfiguration;
+			}
+		}
+		return null;
 	}
 
 	public String getDefaultModuleId(String codeSystemShortName) {
