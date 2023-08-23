@@ -2,6 +2,11 @@
 
 [![Docker](https://img.shields.io/docker/pulls/snomedinternational/snowstorm)](https://hub.docker.com/r/snomedinternational/snowstorm)
 
+## Simplex Fork of Snowstorm
+This is intended to be a short-lived fork of Snowstorm to support Simplex Toolkit development.
+
+---
+
 Snowstorm is an open source terminology server with special support for SNOMED CT. It is built on top of Elasticsearch, with a focus on performance and enterprise scalability.
 
 SNOMED International is not able to offer commercial support for this product. 
