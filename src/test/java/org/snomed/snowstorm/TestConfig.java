@@ -67,8 +67,8 @@ public class TestConfig extends Config {
 		public SnowstormElasticsearchContainer() {
 			super("docker.elastic.co/elasticsearch/elasticsearch:" + ELASTIC_SEARCH_SERVER_VERSION);
 			// these are mapped ports used by the test container the actual ports used might be different
-			this.addFixedExposedPort(9235, 9235);
-			this.addFixedExposedPort(9330, 9330);
+			this.addFixedExposedPort(9236, 9235);
+			this.addFixedExposedPort(9331, 9330);
 			addEnv("xpack.security.enabled", "false");
 			this.addEnv("cluster.name", "integration-test-cluster");
 		}
