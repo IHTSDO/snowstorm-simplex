@@ -93,4 +93,14 @@ public class AuthoringStatsController {
 		return authoringStatsService.getReactivatedSynonyms(BranchPathUriUtil.decodePath(branch));
 	}
 
+	@GetMapping(value = "{branch}/authoring-stats/new-refsets", produces = "application/json")
+	public List<ConceptMicro> getNewRefsets(@PathVariable String branch) {
+		return authoringStatsService.getNewRefsets(BranchPathUriUtil.decodePath(branch));
+	}
+
+	@GetMapping(value = "{branch}/authoring-stats/refsets-with-changed-members", produces = "application/json")
+	public List<ConceptMicro> getRefsetsWithChangedMembers(@PathVariable String branch) {
+		return authoringStatsService.getRefsetsWithMembershipChanges(BranchPathUriUtil.decodePath(branch));
+	}
+
 }
