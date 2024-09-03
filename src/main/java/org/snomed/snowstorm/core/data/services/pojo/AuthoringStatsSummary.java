@@ -10,7 +10,9 @@ public class AuthoringStatsSummary {
 	private long inactivatedSynonymsCount;
 	private long newSynonymsForExistingConceptsCount;
 	private long reactivatedSynonymsCount;
-	private Date executionTime;
+	private long newRefsets;
+	private long refsetWithChangedMembers;
+	private final Date executionTime;
 	private String title;
 
 	public AuthoringStatsSummary(Date time) {
@@ -71,6 +73,22 @@ public class AuthoringStatsSummary {
 
 	public long getReactivatedSynonymsCount() {
 		return reactivatedSynonymsCount;
+	}
+
+	public long getNewRefsets() {
+		return newRefsets;
+	}
+
+	public void setNewRefsets(long newRefsets) {
+		this.newRefsets = newRefsets;
+	}
+
+	public long getRefsetWithChangedMembers() {
+		return refsetWithChangedMembers;
+	}
+
+	public void setRefsetWithChangedMembers(long refsetWithChangedMembers) {
+		this.refsetWithChangedMembers = refsetWithChangedMembers;
 	}
 
 	public Date getExecutionTime() {
