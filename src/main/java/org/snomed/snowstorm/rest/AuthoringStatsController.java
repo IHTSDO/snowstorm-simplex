@@ -8,23 +8,26 @@ import org.snomed.snowstorm.core.data.domain.ConceptMicro;
 import org.snomed.snowstorm.core.data.domain.DescriptionMicro;
 import org.snomed.snowstorm.core.data.services.AuthoringStatsService;
 import org.snomed.snowstorm.core.data.services.pojo.AuthoringStatsSummary;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 @RestController
 @Tag(name = "Authoring Stats", description = "-")
 @RequestMapping(produces = "application/json")
 public class AuthoringStatsController {
 
-	@Autowired
-	private AuthoringStatsService authoringStatsService;
+	private final AuthoringStatsService authoringStatsService;
+
+	public AuthoringStatsController(AuthoringStatsService authoringStatsService) {
+		this.authoringStatsService = authoringStatsService;
+	}
 
 	@Operation(summary = "Calculate statistics for unreleased/unversioned content to be used in daily build browser.", description = "Does not work on versioned content.")
 	@GetMapping(value = "{branch}/authoring-stats", produces = "application/json")
-	public AuthoringStatsSummary getStats(@PathVariable String branch) {
+	public AuthoringStatsSummary getStats(@PathVariable String branch) throws ExecutionException {
 		branch = BranchPathUriUtil.decodePath(branch);
 		return authoringStatsService.getStats(branch);
 	}
@@ -48,10 +51,9 @@ public class AuthoringStatsController {
 	@GetMapping(value = "{branch}/authoring-stats/new-descriptions", produces = "application/json")
 	public List<DescriptionMicro> getNewDescriptions(
 			@PathVariable String branch,
-			@RequestParam(required = false, defaultValue = "false") boolean unpromotedChangesOnly,
-			@RequestHeader(value = "Accept-Language", defaultValue = Config.DEFAULT_ACCEPT_LANG_HEADER) String acceptLanguageHeader) {
+			@RequestParam(required = false, defaultValue = "false") boolean unpromotedChangesOnly) {
 
-		return authoringStatsService.getNewDescriptions(BranchPathUriUtil.decodePath(branch), unpromotedChangesOnly, ControllerHelper.parseAcceptLanguageHeaderWithDefaultFallback(acceptLanguageHeader));
+		return authoringStatsService.getNewDescriptions(BranchPathUriUtil.decodePath(branch), unpromotedChangesOnly);
 	}
 
 	@GetMapping(value = "{branch}/authoring-stats/inactivated-concepts", produces = "application/json")
