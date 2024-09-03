@@ -4,6 +4,8 @@ import ch.qos.logback.classic.Level;
 import co.elastic.clients.elasticsearch._types.aggregations.AggregationBuilders;
 import co.elastic.clients.elasticsearch._types.aggregations.TermsAggregation;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import io.kaicode.elasticvc.api.BranchCriteria;
 import io.kaicode.elasticvc.api.VersionControlHelper;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -30,6 +32,8 @@ import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -60,10 +64,17 @@ public class AuthoringStatsService {
 
 	@Autowired
 	private QueryService queryService;
-//
-	public AuthoringStatsSummary getStats(String branch) {
-		BranchCriteria branchCriteria = versionControlHelper.getBranchCriteria(branch);
 
+	// Cache of commit stats using branch path and commit time-point as the key
+	private final Cache<String, AuthoringStatsSummary> branchCommitStatsCache = CacheBuilder.newBuilder().expireAfterAccess(5, TimeUnit.DAYS).build();
+
+	public AuthoringStatsSummary getStats(String branch) throws ExecutionException {
+		BranchCriteria branchCriteria = versionControlHelper.getBranchCriteria(branch);
+		String cacheKey = String.format("%s_%s", branch, branchCriteria.getTimepoint().getTime());
+		return branchCommitStatsCache.get(cacheKey, () -> doGetStats(branchCriteria));
+	}
+
+	private AuthoringStatsSummary doGetStats(BranchCriteria branchCriteria) {
 		TimerUtil timer = new TimerUtil("Authoring stats", Level.INFO, 5);
 
 		AuthoringStatsSummary authoringStatsSummary = new AuthoringStatsSummary(new Date());
