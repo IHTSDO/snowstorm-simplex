@@ -8,37 +8,41 @@ import io.kaicode.elasticvc.api.BranchCriteria;
 import io.kaicode.elasticvc.api.VersionControlHelper;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-
+import org.jetbrains.annotations.NotNull;
 import org.snomed.snowstorm.core.data.domain.*;
 import org.snomed.snowstorm.core.data.services.pojo.AuthoringStatsSummary;
 import org.snomed.snowstorm.core.data.services.pojo.PageWithBucketAggregations;
 import org.snomed.snowstorm.core.data.services.pojo.PageWithBucketAggregationsFactory;
+import org.snomed.snowstorm.core.data.services.pojo.ResultMapPage;
 import org.snomed.snowstorm.core.pojo.LanguageDialect;
+import org.snomed.snowstorm.core.util.SearchAfterPage;
 import org.snomed.snowstorm.core.util.TimerUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.SearchHitsIterator;
-import org.springframework.data.elasticsearch.client.elc.NativeQuery;
-import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.query.FetchSourceFilter;
 import org.springframework.data.elasticsearch.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders.bool;
 import static io.kaicode.elasticvc.api.VersionControlHelper.LARGE_PAGE;
-import static java.lang.Long.parseLong;
-import static co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders.*;
 import static io.kaicode.elasticvc.helper.QueryHelper.*;
+import static java.lang.Long.parseLong;
+import static org.snomed.snowstorm.config.Config.DEFAULT_LANGUAGE_DIALECTS;
 
 @Service
 public class AuthoringStatsService {
 	
-	public static final PageRequest NULL_PAGE = PageRequest.of(0,1);
+	public static final PageRequest PAGE_OF_ONE = PageRequest.of(0,1);
 	public static final String AGGREGATION_COUNTS_BY_MODULE = "countByModule";
 	public static final TermsAggregation MODULE_AGGREGATION = AggregationBuilders
 			.terms()
@@ -53,7 +57,10 @@ public class AuthoringStatsService {
 
 	@Autowired
 	private ConceptService conceptService;
-	
+
+	@Autowired
+	private QueryService queryService;
+//
 	public AuthoringStatsSummary getStats(String branch) {
 		BranchCriteria branchCriteria = versionControlHelper.getBranchCriteria(branch);
 
@@ -114,6 +121,17 @@ public class AuthoringStatsService {
 				.build()), Description.class);
 		timer.checkpoint("reactivated descriptions");
 		authoringStatsSummary.setReactivatedSynonymsCount(reactivatedSynonyms.getTotalHits());
+
+		// New refsets
+		QueryService.ConceptQueryBuilder queryBuilder = getNewRefsetsCriteria();
+		SearchAfterPage<Long> newRefsets = queryService.searchForIds(queryBuilder, branchCriteria, pageOfOne);
+		timer.checkpoint("new refsets");
+		authoringStatsSummary.setNewRefsets(newRefsets.getTotalElements());
+
+		// Refsets with changed members
+		Map<String, Long> refsetIdToCountMap = getRefsetsWithChangedMembersAndCounts(branchCriteria);
+		timer.checkpoint("refsets with changed members");
+		authoringStatsSummary.setRefsetWithChangedMembers(refsetIdToCountMap.size());
 
 		return authoringStatsSummary;
 	}
@@ -225,6 +243,18 @@ public class AuthoringStatsService {
 		return getDescriptionResults(getReactivatedSynonymsCriteria(branchCriteria));
 	}
 
+	public List<ConceptMicro> getNewRefsets(String branchPath) {
+		QueryService.ConceptQueryBuilder newRefsetsCriteria = getNewRefsetsCriteria();
+		return mapToSortedMicros(queryService.search(newRefsetsCriteria, branchPath, LARGE_PAGE).stream());
+	}
+
+	public List<ConceptMicro> getRefsetsWithMembershipChanges(String branch) {
+		BranchCriteria branchCriteria = versionControlHelper.getBranchCriteria(branch);
+		Map<String, Long> refsetIdToCountMap = getRefsetsWithChangedMembersAndCounts(branchCriteria);
+		ResultMapPage<String, ConceptMini> conceptMinis = conceptService.findConceptMinis(branchCriteria, refsetIdToCountMap.keySet(), DEFAULT_LANGUAGE_DIALECTS);
+		return mapToSortedMicros(conceptMinis.getResultsMap().values().stream());
+	}
+
 	private List<ConceptMicro> getDescriptionResults(NativeQueryBuilder criteria) {
 		List<ConceptMicro> micros = new ArrayList<>();
 		try (SearchHitsIterator<Description> stream = elasticsearchOperations.searchForStream(criteria.withPageable(LARGE_PAGE).build(), Description.class)) {
@@ -313,9 +343,39 @@ public class AuthoringStatsService {
 						.must(termQuery(Description.Fields.RELEASED, "true"))));
 	}
 
+	private QueryService.ConceptQueryBuilder getNewRefsetsCriteria() {
+		return queryService.createQueryBuilder(Relationship.CharacteristicType.inferred)
+				.ecl("< 900000000000455006 |Reference set (foundation metadata concept)|")
+				.isNullEffectiveTime(true);
+	}
+
+	private Map<String, Long> getRefsetsWithChangedMembersAndCounts(BranchCriteria branchCriteria) {
+		TermsAggregation refsetAggregation = AggregationBuilders
+				.terms()
+				.field(ReferenceSetMember.Fields.REFSET_ID)
+				.size(1_000).build();
+
+		String refsetAggregationName = "Refset";
+		NativeQuery searchQuery = new NativeQueryBuilder()
+				.withQuery(bool(b -> b
+						.must(branchCriteria.getEntityBranchCriteria(ReferenceSetMember.class))
+						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))))
+				.withPageable(PAGE_OF_ONE)
+				.withAggregation(refsetAggregationName, refsetAggregation._toAggregation())
+				.build();
+
+		SearchHits<? extends SnomedComponent<?>> pageResults = elasticsearchOperations.search(searchQuery, ReferenceSetMember.class);
+		PageWithBucketAggregations<? extends SnomedComponent<?>> aggPage = PageWithBucketAggregationsFactory.createPage(pageResults, pageResults.getAggregations(), PAGE_OF_ONE);
+		return aggPage.getBuckets().get(refsetAggregationName);
+	}
+
 	private List<ConceptMicro> getConceptMicros(List<Long> conceptIds, List<LanguageDialect> languageDialects, BranchCriteria branchCriteria) {
-		return conceptService.findConceptMinis(branchCriteria, conceptIds, languageDialects).getResultsMap().values().stream()
-				.map(ConceptMicro::new).sorted(Comparator.comparing(ConceptMicro::getTerm)).collect(Collectors.toList());
+		Stream<ConceptMini> miniStream = conceptService.findConceptMinis(branchCriteria, conceptIds, languageDialects).getResultsMap().values().stream();
+		return mapToSortedMicros(miniStream);
+	}
+
+	private static @NotNull List<ConceptMicro> mapToSortedMicros(Stream<ConceptMini> miniStream) {
+		return miniStream.map(ConceptMicro::new).sorted(Comparator.comparing(ConceptMicro::getTerm)).collect(Collectors.toList());
 	}
 
 	private Query withTotalHitsTracking(Query query) {
@@ -338,12 +398,12 @@ public class AuthoringStatsService {
 				.mustNot(existsQuery("end"));
 		NativeQuery searchQuery = new NativeQueryBuilder()
 				.withQuery(queryBuilder.build()._toQuery())
-				.withPageable(NULL_PAGE)
+				.withPageable(PAGE_OF_ONE)
 				.withAggregation(AGGREGATION_COUNTS_BY_MODULE, MODULE_AGGREGATION._toAggregation())
 				.build();
 
 		SearchHits<? extends SnomedComponent<?>> pageResults = elasticsearchOperations.search(searchQuery, componentClass);
-		PageWithBucketAggregations<? extends SnomedComponent<?>> aggPage = PageWithBucketAggregationsFactory.createPage(pageResults, pageResults.getAggregations(), NULL_PAGE);
+		PageWithBucketAggregations<? extends SnomedComponent<?>> aggPage = PageWithBucketAggregationsFactory.createPage(pageResults, pageResults.getAggregations(), PAGE_OF_ONE);
 		return aggPage.getBuckets().get(AGGREGATION_COUNTS_BY_MODULE);
 	}
 }
