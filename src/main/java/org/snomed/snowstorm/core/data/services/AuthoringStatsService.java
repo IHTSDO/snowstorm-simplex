@@ -19,7 +19,6 @@ import org.snomed.snowstorm.core.data.services.pojo.ResultMapPage;
 import org.snomed.snowstorm.core.pojo.LanguageDialect;
 import org.snomed.snowstorm.core.util.SearchAfterPage;
 import org.snomed.snowstorm.core.util.TimerUtil;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
@@ -34,7 +33,6 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders.bool;
@@ -52,21 +50,26 @@ public class AuthoringStatsService {
 			.terms()
 			.field(SnomedComponent.Fields.MODULE_ID)
 			.size(100).build();
+	public static final String FALSE = "false";
+	public static final String TRUE = "true";
 
-	@Autowired
-	private VersionControlHelper versionControlHelper;
+	private final VersionControlHelper versionControlHelper;
 
-	@Autowired
-	private ElasticsearchOperations elasticsearchOperations;
+	private final ElasticsearchOperations elasticsearchOperations;
 
-	@Autowired
-	private ConceptService conceptService;
+	private final ConceptService conceptService;
 
-	@Autowired
-	private QueryService queryService;
+	private final QueryService queryService;
 
 	// Cache of commit stats using branch path and commit time-point as the key
 	private final Cache<String, AuthoringStatsSummary> branchCommitStatsCache = CacheBuilder.newBuilder().expireAfterAccess(5, TimeUnit.DAYS).build();
+
+	public AuthoringStatsService(VersionControlHelper versionControlHelper, ElasticsearchOperations elasticsearchOperations, ConceptService conceptService, QueryService queryService) {
+		this.versionControlHelper = versionControlHelper;
+		this.elasticsearchOperations = elasticsearchOperations;
+		this.conceptService = conceptService;
+		this.queryService = queryService;
+	}
 
 	public AuthoringStatsSummary getStats(String branch) throws ExecutionException {
 		BranchCriteria branchCriteria = versionControlHelper.getBranchCriteria(branch);
@@ -153,8 +156,8 @@ public class AuthoringStatsService {
 				.withQuery(bool(bq -> bq
 						.must(branchCriteria.getEntityBranchCriteria(Description.class))
 						.must(termQuery(Description.Fields.TYPE_ID, Concepts.SYNONYM))
-						.must(termQuery(Concept.Fields.ACTIVE, true))
-						.must(termQuery(Concept.Fields.RELEASED, "false"))))
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, true))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, FALSE))))
 				.withSourceFilter(new FetchSourceFilter(new String[]{Description.Fields.CONCEPT_ID}, null))
 				.withPageable(LARGE_PAGE)
 				.build(), Description.class)) {
@@ -166,7 +169,7 @@ public class AuthoringStatsService {
 		try (SearchHitsIterator<Concept> stream = elasticsearchOperations.searchForStream(new NativeQueryBuilder()
 				.withQuery(bool(b -> b
 						.must(branchCriteria.getEntityBranchCriteria(Concept.class))
-						.must(termQuery(Concept.Fields.RELEASED, "true"))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, TRUE))
 						.filter(termsQuery(Concept.Fields.CONCEPT_ID, newSynonymConceptIds)))
 				)
 				.withSourceFilter(new FetchSourceFilter(new String[]{Concept.Fields.CONCEPT_ID}, null))
@@ -180,9 +183,9 @@ public class AuthoringStatsService {
 				.withQuery(bool(b -> b
 						.must(branchCriteria.getEntityBranchCriteria(Description.class))
 						.must(termQuery(Description.Fields.TYPE_ID, Concepts.SYNONYM))
-						.must(termQuery(Description.Fields.ACTIVE, true))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
-						.must(termQuery(Description.Fields.RELEASED, "false"))
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, true))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, FALSE))
 						.filter(termsQuery(Description.Fields.CONCEPT_ID, existingConceptsWithNewSynonyms)))
 				);
 	}
@@ -198,7 +201,7 @@ public class AuthoringStatsService {
 		return getConceptMicros(conceptIds, languageDialects, selectionBranchCriteria);
 	}
 	
-	public List<DescriptionMicro> getNewDescriptions(String branch, boolean unpromotedChangesOnly, List<LanguageDialect> languageDialects) {
+	public List<DescriptionMicro> getNewDescriptions(String branch, boolean unpromotedChangesOnly) {
 		BranchCriteria allContentBranchCriteria = versionControlHelper.getBranchCriteria(branch);
 		BranchCriteria selectionBranchCriteria = unpromotedChangesOnly ? versionControlHelper.getChangesOnBranchCriteria(branch) : allContentBranchCriteria;
 
@@ -206,7 +209,7 @@ public class AuthoringStatsService {
 		return elasticsearchOperations.search(query, Description.class)
 				.get().map(SearchHit::getContent)
 				.map(DescriptionMicro::new)
-				.collect(Collectors.toList());
+				.toList();
 	}
 
 	public List<ConceptMicro> getInactivatedConcepts(String branch, List<LanguageDialect> languageDialects) {
@@ -279,9 +282,9 @@ public class AuthoringStatsService {
 		return new NativeQueryBuilder()
 				.withQuery(bool(b -> b
 						.must(branchCriteria.getEntityBranchCriteria(Concept.class))
-						.must(termQuery(Concept.Fields.ACTIVE, "true"))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
-						.must(termQuery(Concept.Fields.RELEASED, "false"))))
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, TRUE))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, FALSE))))
 				.withSourceFilter(new FetchSourceFilter(new String[]{Concept.Fields.CONCEPT_ID}, null));
 	}
 	
@@ -289,9 +292,9 @@ public class AuthoringStatsService {
 		return new NativeQueryBuilder()
 				.withQuery(bool(bq -> bq
 						.must(branchCriteria.getEntityBranchCriteria(Description.class))
-						.must(termQuery(Concept.Fields.ACTIVE, "true"))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
-						.must(termQuery(Concept.Fields.RELEASED, "false"))))
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, TRUE))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, FALSE))))
 				.withSourceFilter(new FetchSourceFilter(new String[]{Description.Fields.DESCRIPTION_ID, Description.Fields.CONCEPT_ID, Description.Fields.TERM}, null));
 	}
 
@@ -299,9 +302,9 @@ public class AuthoringStatsService {
 		return new NativeQueryBuilder()
 				.withQuery(bool(bq -> bq
 						.must(branchCriteria.getEntityBranchCriteria(Concept.class))
-						.must(termQuery(Concept.Fields.ACTIVE, "false"))
-						.must(termQuery(Concept.Fields.RELEASED, "true"))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, FALSE))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, TRUE))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
 				))
 				.withSourceFilter(new FetchSourceFilter(new String[]{Concept.Fields.CONCEPT_ID}, null));
 	}
@@ -310,11 +313,11 @@ public class AuthoringStatsService {
 		return new NativeQueryBuilder()
 				.withQuery(bool(bq -> bq
 						.must(branchCriteria.getEntityBranchCriteria(Concept.class))
-						.must(termQuery(Concept.Fields.ACTIVE, "true"))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
-						.must(termQuery(Concept.Fields.RELEASED, "true"))
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, TRUE))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, TRUE))
 						// Previously released as active=false
-						.must(prefixQuery(Concept.Fields.RELEASE_HASH, "false"))
+						.must(prefixQuery(SnomedComponent.Fields.RELEASE_HASH, FALSE))
 				))
 				.withSourceFilter(new FetchSourceFilter(new String[]{Concept.Fields.CONCEPT_ID}, null));
 	}
@@ -327,8 +330,8 @@ public class AuthoringStatsService {
 						// just select published FSNs which have been changed.
 						// This will cover: minor changes to term, change to case significance and replaced FSNs.
 						.must(termQuery(Description.Fields.TYPE_ID, Concepts.FSN))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
-						.must(termQuery(Concept.Fields.RELEASED, "true"))))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, TRUE))))
 				.withSourceFilter(new FetchSourceFilter(new String[]{Description.Fields.CONCEPT_ID}, null));
 	}
 
@@ -337,9 +340,9 @@ public class AuthoringStatsService {
 				.withQuery(bool(bq -> bq
 						.must(branchCriteria.getEntityBranchCriteria(Description.class))
 						.must(termQuery(Description.Fields.TYPE_ID, Concepts.SYNONYM))
-						.must(termQuery(Concept.Fields.ACTIVE, false))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
-						.must(termQuery(Concept.Fields.RELEASED, "true"))));
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, false))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, TRUE))));
 	}
 
 	private NativeQueryBuilder getReactivatedSynonymsCriteria(BranchCriteria branchCriteria) {
@@ -347,11 +350,11 @@ public class AuthoringStatsService {
 				.withQuery(bool(bq -> bq
 						.must(branchCriteria.getEntityBranchCriteria(Description.class))
 						.must(termQuery(Description.Fields.TYPE_ID, Concepts.SYNONYM))
-						.must(termQuery(Description.Fields.ACTIVE, true))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))
+						.must(termQuery(SnomedComponent.Fields.ACTIVE, true))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))
 						// Previously released as active=false
-						.must(prefixQuery(Description.Fields.RELEASE_HASH, "false"))
-						.must(termQuery(Description.Fields.RELEASED, "true"))));
+						.must(prefixQuery(SnomedComponent.Fields.RELEASE_HASH, FALSE))
+						.must(termQuery(SnomedComponent.Fields.RELEASED, TRUE))));
 	}
 
 	private QueryService.ConceptQueryBuilder getNewRefsetsCriteria() {
@@ -370,7 +373,7 @@ public class AuthoringStatsService {
 		NativeQuery searchQuery = new NativeQueryBuilder()
 				.withQuery(bool(b -> b
 						.must(branchCriteria.getEntityBranchCriteria(ReferenceSetMember.class))
-						.mustNot(existsQuery(Concept.Fields.EFFECTIVE_TIME))))
+						.mustNot(existsQuery(SnomedComponent.Fields.EFFECTIVE_TIME))))
 				.withPageable(PAGE_OF_ONE)
 				.withAggregation(refsetAggregationName, refsetAggregation._toAggregation())
 				.build();
@@ -386,7 +389,7 @@ public class AuthoringStatsService {
 	}
 
 	private static @NotNull List<ConceptMicro> mapToSortedMicros(Stream<ConceptMini> miniStream) {
-		return miniStream.map(ConceptMicro::new).sorted(Comparator.comparing(ConceptMicro::getTerm)).collect(Collectors.toList());
+		return miniStream.map(ConceptMicro::new).sorted(Comparator.comparing(ConceptMicro::getTerm)).toList();
 	}
 
 	private Query withTotalHitsTracking(Query query) {
