@@ -24,6 +24,7 @@
 		<elasticsearch.version>8.11.4</elasticsearch.version>
 		<spring.version>6.1.12</spring.version>
 		<springdoc-openapi-starter-webmvc-ui.version>2.6.0</springdoc-openapi-starter-webmvc-ui.version>
+		<hapi-fhir.version>7.4.3</hapi-fhir.version>
 
 		<docker.registry>docker.io</docker.registry>
 		<docker.allowInsecureRegistries>false</docker.allowInsecureRegistries>
@@ -33,6 +34,13 @@
 	</properties>
 
 	<dependencies>
+		<!-- BOM Overrides -->
+		<dependency>
+			<groupId>ca.uhn.hapi.fhir</groupId>
+			<artifactId>org.hl7.fhir.r4</artifactId>
+			<version>6.3.29</version>
+		</dependency>
+
 		<dependency>
 			<!-- Branching and Version Control on top of Elasticsearch -->
 			<groupId>io.kaicode</groupId>
@@ -202,6 +210,22 @@
 					<groupId>org.springdoc</groupId>
 					<artifactId>springdoc-openapi-ui</artifactId>
 				</exclusion>
+				<exclusion>
+					<groupId>ca.uhn.hapi.fhir</groupId>
+					<artifactId>org.hl7.fhir.r5</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>ca.uhn.hapi.fhir</groupId>
+					<artifactId>org.hl7.fhir.r4b</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>ca.uhn.hapi.fhir</groupId>
+					<artifactId>org.hl7.fhir.dstu3</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>ca.uhn.hapi.fhir</groupId>
+					<artifactId>org.hl7.fhir.dstu2016may</artifactId>
+				</exclusion>
 			</exclusions>
 		</dependency>
 		<dependency>
@@ -211,6 +235,10 @@
 				<exclusion>
 					<groupId>org.hibernate</groupId>
 					<artifactId>*</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>ca.uhn.hapi.fhir</groupId>
+					<artifactId>org.hl7.fhir.r5</artifactId>
 				</exclusion>
 			</exclusions>
 		</dependency>
