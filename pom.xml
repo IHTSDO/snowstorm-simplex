@@ -226,6 +226,10 @@
 					<groupId>ca.uhn.hapi.fhir</groupId>
 					<artifactId>org.hl7.fhir.dstu2016may</artifactId>
 				</exclusion>
+				<exclusion>
+					<groupId>com.google.protobuf</groupId>
+					<artifactId>protobuf-java</artifactId>
+				</exclusion>
 			</exclusions>
 		</dependency>
 		<dependency>
