@@ -1,3 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <suppress>
+        <notes><![CDATA[
+   file name: lucene-analyzers-common-8.11.4.jar.
+   Suppressed because this is a false positive. The jar does not contain the affected package "org.apache.lucene.replicator.http".
+   ]]></notes>
+        <packageUrl>pkg:maven/org.apache.lucene/lucene-analyzers-common@8.11.4</packageUrl>
+        <cve>CVE-2024-45772</cve>
+    </suppress>
 </suppressions>
