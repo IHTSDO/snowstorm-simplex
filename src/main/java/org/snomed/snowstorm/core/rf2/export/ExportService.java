@@ -245,7 +245,7 @@ public class ExportService {
 					// Write Concepts
 					exportConcepts(exportConfiguration, entryDirectoryPrefix, zipOutputStream, selectionBranchCriteria, codeSystemRF2Name);
 
-					if (!exportConfiguration.isForClassification()) {
+					if (!exportConfiguration.isConceptsAndRelationshipsOnly()) {
 						// Write Descriptions
 						Query descriptionBranchCriteria = exportDescriptions(exportConfiguration, selectionBranchCriteria, entryDirectoryPrefix,
 								zipOutputStream, codeSystemRF2Name);
@@ -446,7 +446,7 @@ public class ExportService {
 			allReferenceSetTypes = getReferenceSetTypes(mainBranchCriteria.getEntityBranchCriteria(ReferenceSetType.class));
 		}
 		return allReferenceSetTypes.stream()
-				.filter(type -> !exportConfiguration.isForClassification() || refsetTypesRequiredForClassification.contains(type.getConceptId()))
+				.filter(type -> !exportConfiguration.isConceptsAndRelationshipsOnly() || refsetTypesRequiredForClassification.contains(type.getConceptId()))
 				.toList();
 	}
 
