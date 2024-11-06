@@ -1,5 +1,6 @@
 package org.snomed.snowstorm.core.data.domain.jobs;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.snomed.snowstorm.core.rf2.RF2Type;
 import org.springframework.data.elasticsearch.annotations.Document;
@@ -94,6 +95,11 @@ public class ExportConfiguration {
 	}
 
 	public boolean isConceptsAndRelationshipsOnly() {
+		return conceptsAndRelationshipsOnly;
+	}
+
+	@JsonIgnore
+	public boolean isForClassification() {
 		return conceptsAndRelationshipsOnly;
 	}
 

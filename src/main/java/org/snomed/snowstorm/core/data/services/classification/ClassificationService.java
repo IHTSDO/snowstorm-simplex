@@ -357,7 +357,7 @@ public class ClassificationService {
 		}
 
 		try {
-			File deltaExport = exportService.exportRF2ArchiveFile(path, new SimpleDateFormat("yyyyMMdd").format(new Date()), RF2Type.DELTA, true);
+			File deltaExport = exportService.exportRF2ClassificationDelta(path, new SimpleDateFormat("yyyyMMdd").format(new Date()));
 			String remoteClassificationId = serviceClient.createClassification(previousPackage, dependencyPackage, deltaExport, path, reasonerId);
 			classification.setId(remoteClassificationId);
 			classification.setStatus(ClassificationStatus.SCHEDULED);
