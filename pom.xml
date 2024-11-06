@@ -10,7 +10,7 @@
 	<parent>
 		<groupId>org.snomed</groupId>
 		<artifactId>snomed-parent-bom</artifactId>
-		<version>3.8.0-SNAPSHOT</version>
+		<version>3.7.1</version>
 	</parent>
 
 	<properties>
@@ -21,12 +21,12 @@
 		-->
 
 		<!-- BOM Overrides: Delete and reevaluate during each upgrade -->
-		<snomed-boot.version>5.1.0</snomed-boot.version>
 		<spring-boot.version>3.2.11</spring-boot.version>
 		<spring.version>6.1.14</spring.version>
 		<spring.security.version>6.2.7</spring.security.version>
 		<protobuf-java.version>4.28.3</protobuf-java.version>
-		<org.hl7.fhir.version>6.3.32</org.hl7.fhir.version>
+		<hapi-fhir.version>7.4.5</hapi-fhir.version>
+		<org.hl7.fhir.version>6.4.0</org.hl7.fhir.version>
 
 		<docker.registry>docker.io</docker.registry>
 		<docker.allowInsecureRegistries>false</docker.allowInsecureRegistries>
@@ -61,6 +61,21 @@
 			<dependency>
 				<groupId>ca.uhn.hapi.fhir</groupId>
 				<artifactId>org.hl7.fhir.dstu2016may</artifactId>
+				<version>${org.hl7.fhir.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ca.uhn.hapi.fhir</groupId>
+				<artifactId>org.hl7.fhir.dstu2</artifactId>
+				<version>${org.hl7.fhir.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ca.uhn.hapi.fhir</groupId>
+				<artifactId>org.hl7.fhir.convertors</artifactId>
+				<version>${org.hl7.fhir.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ca.uhn.hapi.fhir</groupId>
+				<artifactId>org.hl7.fhir.validation</artifactId>
 				<version>${org.hl7.fhir.version}</version>
 			</dependency>
 			<dependency>
