@@ -11,6 +11,7 @@ import io.kaicode.elasticvc.api.VersionControlHelper;
 import io.kaicode.elasticvc.domain.Branch;
 import org.apache.tomcat.util.http.fileupload.util.Streams;
 import org.drools.util.StringUtils;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.snomed.snowstorm.core.data.domain.*;
@@ -363,9 +364,7 @@ public class ExportService {
 			BranchCriteria allContentBranchCriteria, BranchCriteria selectionBranchCriteria, boolean isExtension, boolean generateMDR,
 			String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name, boolean refsetOnlyExport) {
 
-		List<ReferenceSetType> referenceSetTypes = getReferenceSetTypes(allContentBranchCriteria.getEntityBranchCriteria(ReferenceSetType.class)).stream()
-				.filter(type -> !forClassification || refsetTypesRequiredForClassification.contains(type.getConceptId()))
-				.collect(Collectors.toList());
+		List<ReferenceSetType> referenceSetTypes = getReferenceSetTypesForExport(forClassification, allContentBranchCriteria);
 		logger.info("{} Reference Set Types found for this export: {}", referenceSetTypes.size(), referenceSetTypes);
 
 		Query memberBranchCriteria = selectionBranchCriteria.getEntityBranchCriteria(ReferenceSetMember.class);
@@ -379,6 +378,19 @@ public class ExportService {
 						refsetToExport, memberBranchCriteria);
 			}
 		}
+	}
+
+	private @NotNull List<ReferenceSetType> getReferenceSetTypesForExport(boolean forClassification, BranchCriteria allContentBranchCriteria) {
+		List<ReferenceSetType> allReferenceSetTypes = getReferenceSetTypes(allContentBranchCriteria.getEntityBranchCriteria(ReferenceSetType.class));
+		if (allReferenceSetTypes.isEmpty()) {
+			// Probably using a codesystem hanging of the special empty 2000 branch.
+			// Take types from MAIN
+			BranchCriteria mainBranchCriteria = versionControlHelper.getBranchCriteria("MAIN");
+			allReferenceSetTypes = getReferenceSetTypes(mainBranchCriteria.getEntityBranchCriteria(ReferenceSetType.class));
+		}
+		return allReferenceSetTypes.stream()
+				.filter(type -> !forClassification || refsetTypesRequiredForClassification.contains(type.getConceptId()))
+				.toList();
 	}
 
 	private void exportRefset(String branchPath, String filenameEffectiveDate, RF2Type exportType, boolean manyRefsets, String transientEffectiveTime,
