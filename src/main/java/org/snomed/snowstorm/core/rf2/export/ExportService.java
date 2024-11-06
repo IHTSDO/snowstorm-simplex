@@ -410,8 +410,7 @@ public class ExportService {
 			RF2Type exportType, ZipOutputStream zipOutputStream, Query contentQuery, String transientEffectiveTime, List<String> extraFieldNames, String codeSystemRF2Name, ExportFilter<T> exportFilter) {
 
 		String componentFilePath = entryDirectoryPrefix + entryDirectory + entryFilenamePrefix + format("%s_%s_%s.txt", exportType.getName(), codeSystemRF2Name, filenameEffectiveDate);
-		logger.info("Exporting file {}", componentFilePath);
-		logger.info("Export filter is " + (exportFilter==null?"null" : "present"));
+		logger.info("Exporting file {}. Export filter is {}", componentFilePath, (exportFilter == null ? "null" : "present"));
 		try {
 			// Open zip entry
 			zipOutputStream.putNextEntry(new ZipEntry(componentFilePath));
