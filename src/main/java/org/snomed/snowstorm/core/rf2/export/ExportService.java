@@ -535,8 +535,7 @@ public class ExportService {
 	private <T> int doExportComponents(Class<T> componentClass, ZipOutputStream zipOutputStream, String transientEffectiveTime,
 			List<String> extraFieldNames, ExportFilter<T> exportFilter, Iterator<T> componentIterator, String componentFilePath) {
 
-		logger.info("Exporting file {}", componentFilePath);
-		logger.info("Export filter is {}", exportFilter == null ? "null" : "present");
+		logger.info("Exporting file {}, {} export filter", componentFilePath, exportFilter != null ? "with" : "without");
 		try {
 			// Open zip entry
 			zipOutputStream.putNextEntry(new ZipEntry(componentFilePath));
