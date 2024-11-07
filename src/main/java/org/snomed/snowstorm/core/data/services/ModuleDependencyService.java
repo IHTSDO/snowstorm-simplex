@@ -373,6 +373,9 @@ public class ModuleDependencyService extends ComponentService {
 
 	private List<String> findAncestorModules(String module, List<String> targetSet,
 			Set<ReferenceSetMember> existingRefsetMembers) {
+		if (existingRefsetMembers == null) {
+			return Collections.emptyList();
+		}
 		Set<String> ancestors = existingRefsetMembers.stream()
 				.filter(SnomedComponent::isActive)
 				.map(ReferenceSetMember::getReferencedComponentId)
