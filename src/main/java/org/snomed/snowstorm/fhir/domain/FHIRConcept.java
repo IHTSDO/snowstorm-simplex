@@ -145,6 +145,9 @@ public class FHIRConcept implements FHIRGraphNode {
 				designations.add(designation);
 			}
 		}
+
+		properties = new HashMap<>();
+		properties.put("inactive",Collections.singletonList(new FHIRProperty("inactive",null,Boolean.toString(!isActive()),FHIRProperty.BOOLEAN_TYPE)));
 	}
 
 	@Override
@@ -210,6 +213,9 @@ public class FHIRConcept implements FHIRGraphNode {
 	}
 
 	public List<FHIRDesignation> getDesignations() {
+		if (designations == null) {
+			designations = new ArrayList<>();
+		}
 		return designations;
 	}
 
