@@ -90,7 +90,7 @@ public class ExportService {
 
 	public ExportConfiguration getExportJobOrThrow(String exportId) {
 		Optional<ExportConfiguration> config = exportConfigurationRepository.findById(exportId);
-		if (!config.isPresent()) {
+		if (config.isEmpty()) {
 			throw new NotFoundException("Export job not found.");
 		}
 		return config.get();
@@ -110,20 +110,22 @@ public class ExportService {
 				exportConfiguration.getType(), exportConfiguration.isConceptsAndRelationshipsOnly(), exportConfiguration.isUnpromotedChangesOnly(),
 				exportConfiguration.getTransientEffectiveTime(), exportConfiguration.getStartEffectiveTime(), exportConfiguration.getModuleIds(),
 				exportConfiguration.isLegacyZipNaming(), exportConfiguration.getRefsetIds(), exportConfiguration.getId());
-		logger.info("Transmitting " + exportConfiguration.getId() + " export file " + exportFile);
+		logger.info("Transmitting {} export file {}", exportConfiguration.getId(), exportFile);
 		try (FileInputStream inputStream = new FileInputStream(exportFile)) {
 			long fileSize = Files.size(exportFile.toPath());
 			long bytesTransferred = Streams.copy(inputStream, outputStream, false);
 			exportConfiguration.setStatus(ExportStatus.COMPLETED);
 			exportConfigurationRepository.save(exportConfiguration);
-			logger.info("Transmitted " + bytesTransferred + "bytes (file size = " + fileSize + "bytes) for export " + exportConfiguration.getId());
+			logger.info("Transmitted {} bytes (file size = {}bytes) for export {}", bytesTransferred, fileSize, exportConfiguration.getId());
 		} catch (IOException e) {
 			exportConfiguration.setStatus(ExportStatus.FAILED);
 			exportConfigurationRepository.save(exportConfiguration);
 			throw new ExportException("Failed to copy RF2 data into output stream.", e);
 		} finally {
-			exportFile.delete();
-			logger.info("Deleted " + exportConfiguration.getId() + " export file " + exportFile);
+			if (!exportFile.delete()) {
+				logger.warn("Temp export file {} could not be deleted.", exportFile);
+			}
+			logger.info("Deleted {} export file {}", exportConfiguration.getId(), exportFile);
 		}
 	}
 
@@ -215,113 +217,38 @@ public class ExportService {
 			}
 		}
 
+		boolean refsetOnlyExport = refsetIds != null && !refsetIds.isEmpty();
+
 		try {
 			branchService.lockBranch(branchPath, branchMetadataHelper.getBranchLockMetadata("Exporting RF2 " + exportType.getName()));
 			File exportFile = File.createTempFile("export-" + new Date().getTime(), ".zip");
 			try (ZipOutputStream zipOutputStream = new ZipOutputStream(new FileOutputStream(exportFile))) {
 
-				boolean refsetOnlyExport = refsetIds != null && !refsetIds.isEmpty();
-
 				if (!refsetOnlyExport) {
 					// Write Concepts
-					int conceptLines = exportComponents(Concept.class, entryDirectoryPrefix, "Terminology/", "sct2_Concept_", filenameEffectiveDate, exportType, zipOutputStream,
-							getContentQuery(exportType, moduleIds, startEffectiveTime, selectionBranchCriteria.getEntityBranchCriteria(Concept.class)).build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-					logger.info("{} concept states exported", conceptLines);
+					exportConcepts(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+							entryDirectoryPrefix, zipOutputStream, selectionBranchCriteria, codeSystemRF2Name);
 
 					if (!forClassification) {
 						// Write Descriptions
-						Query descriptionBranchCriteria = selectionBranchCriteria.getEntityBranchCriteria(Description.class);
-						BoolQuery.Builder descriptionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
-						descriptionContentQuery.mustNot(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
-						int descriptionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_Description_", filenameEffectiveDate, exportType, zipOutputStream,
-								descriptionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-						logger.info("{} description states exported", descriptionLines);
+						Query descriptionBranchCriteria = exportDescriptions(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+								selectionBranchCriteria, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 
 						// Write Text Definitions
-						BoolQuery.Builder textDefinitionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
-						textDefinitionContentQuery.must(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
-						int textDefinitionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_TextDefinition_", filenameEffectiveDate, exportType, zipOutputStream,
-								textDefinitionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-						logger.info("{} text defintion states exported", textDefinitionLines);
+						exportTextDefinitions(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+								descriptionBranchCriteria, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 					}
 
-					// Write Stated Relationships
-					Query relationshipBranchCritera = selectionBranchCriteria.getEntityBranchCriteria(Relationship.class);
-					BoolQuery.Builder relationshipQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, relationshipBranchCritera);
-					relationshipQuery.must(termQuery(Relationship.Fields.CHARACTERISTIC_TYPE_ID, Concepts.STATED_RELATIONSHIP));
-					int statedRelationshipLines = exportComponents(Relationship.class, entryDirectoryPrefix, "Terminology/", "sct2_StatedRelationship_", filenameEffectiveDate, exportType, zipOutputStream,
-							relationshipQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-					logger.info("{} stated relationship states exported", statedRelationshipLines);
-
-					// Write Inferred non-concrete Relationships
-					relationshipQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, relationshipBranchCritera);
-					// Not 'stated' will include inferred and additional
-					relationshipQuery.mustNot(termQuery(Relationship.Fields.CHARACTERISTIC_TYPE_ID, Concepts.STATED_RELATIONSHIP));
-					relationshipQuery.must(existsQuery(Relationship.Fields.DESTINATION_ID));
-					int inferredRelationshipLines = exportComponents(Relationship.class, entryDirectoryPrefix, "Terminology/", "sct2_Relationship_", filenameEffectiveDate, exportType, zipOutputStream,
-							relationshipQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-					logger.info("{} inferred (non-concrete) and additional relationship states exported", inferredRelationshipLines);
-
-					// Write Concrete Inferred Relationships
-					relationshipQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, relationshipBranchCritera);
-					relationshipQuery.must(termQuery(Relationship.Fields.CHARACTERISTIC_TYPE_ID, Concepts.INFERRED_RELATIONSHIP));
-					relationshipQuery.must(existsQuery(Relationship.Fields.VALUE));
-					int inferredConcreteRelationshipLines = exportComponents(Relationship.class, entryDirectoryPrefix, "Terminology/", "sct2_RelationshipConcreteValues_", filenameEffectiveDate, exportType,
-							zipOutputStream,
-							relationshipQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-					logger.info("{} concrete inferred relationship states exported", inferredConcreteRelationshipLines);
+					exportRelationshipsAllTypes(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+							selectionBranchCriteria, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 
 					// Write Identifiers
-					BoolQuery.Builder identifierContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, selectionBranchCriteria.getEntityBranchCriteria(Identifier.class));
-					int identifierLines = exportComponents(Identifier.class, entryDirectoryPrefix, "Terminology/", "sct2_Identifier_", filenameEffectiveDate, exportType, zipOutputStream,
-							identifierContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-					logger.info("{} identifier states exported", identifierLines);
+					exportIdentifiers(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+							selectionBranchCriteria, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 				}
 
 				// Write Reference Sets
-				List<ReferenceSetType> referenceSetTypes = getReferenceSetTypes(allContentBranchCriteria.getEntityBranchCriteria(ReferenceSetType.class)).stream()
-						.filter(type -> !forClassification || refsetTypesRequiredForClassification.contains(type.getConceptId()))
-						.collect(Collectors.toList());
-
-				logger.info("{} Reference Set Types found for this export: {}", referenceSetTypes.size(), referenceSetTypes);
-
-				Query memberBranchCriteria = selectionBranchCriteria.getEntityBranchCriteria(ReferenceSetMember.class);
-				Set<String> moduleIdsBackup = moduleIds;
-				for (ReferenceSetType referenceSetType : referenceSetTypes) {
-					List<Long> refsetsOfThisType = new ArrayList<>(queryService.findDescendantIdsAsUnion(allContentBranchCriteria, true, Collections.singleton(Long.parseLong(referenceSetType.getConceptId()))));
-					refsetsOfThisType.add(Long.parseLong(referenceSetType.getConceptId()));
-					for (Long refsetToExport : refsetsOfThisType) {
-						if (!refsetOnlyExport || refsetIds.contains(refsetToExport.toString())) {
-							if (Concepts.MODULE_DEPENDENCY_REFERENCE_SET.equals(String.valueOf(refsetToExport))) {
-								moduleIds.addAll(sBranchService.getModules(branchPath));
-							}
-
-							BoolQuery.Builder memberQueryBuilder = getContentQuery(exportType, moduleIds, startEffectiveTime, memberBranchCriteria);
-							memberQueryBuilder.must(termQuery(ReferenceSetMember.Fields.REFSET_ID, refsetToExport));
-							Query memberQuery = memberQueryBuilder.build()._toQuery();
-							long memberCount = elasticsearchOperations.count(getNativeSearchQuery(memberQuery), ReferenceSetMember.class);
-							if (memberCount > 0) {
-								logger.info("Exporting Reference Set {} {} with {} members", refsetToExport, referenceSetType.getName(), memberCount);
-								String exportDir = referenceSetType.getExportDir();
-								String entryDirectory = !exportDir.startsWith("/") ? "Refset/" + exportDir + "/" : exportDir.substring(1) + "/";
-								String entryFilenamePrefix = (!entryDirectory.startsWith("Terminology/") ? "der2_" : "sct2_") + referenceSetType.getFieldTypes() + "Refset_" + referenceSetType.getName() + (refsetsOfThisType.size() > 1 ? refsetToExport : "");
-								exportComponents(
-										ReferenceSetMember.class,
-										entryDirectoryPrefix, entryDirectory,
-										entryFilenamePrefix,
-										filenameEffectiveDate,
-										exportType,
-										zipOutputStream,
-										memberQuery,
-										transientEffectiveTime,
-										referenceSetType.getFieldNameList(),
-										codeSystemRF2Name,
-										null);
-							}
-							moduleIds = moduleIdsBackup;
-						}
-					}
-				}
+				exportRefsetMembers(branchPath, filenameEffectiveDate, exportType, forClassification, transientEffectiveTime, startEffectiveTime, moduleIds, refsetIds, allContentBranchCriteria, selectionBranchCriteria, refsetOnlyExport, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 			}
 
 			logger.info("{} export of {}{} complete in {} seconds.", exportType, branchPath, exportStr, TimerUtil.secondsSince(startTime));
@@ -330,6 +257,119 @@ public class ExportService {
 			throw new ExportException("Failed to write RF2 zip file.", e);
 		} finally {
 			branchService.unlock(branchPath);
+		}
+	}
+
+	private void exportConcepts(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, BranchCriteria selectionBranchCriteria, String codeSystemRF2Name) {
+		int conceptLines = exportComponents(Concept.class, entryDirectoryPrefix, "Terminology/", "sct2_Concept_", filenameEffectiveDate, exportType, zipOutputStream,
+				getContentQuery(exportType, moduleIds, startEffectiveTime, selectionBranchCriteria.getEntityBranchCriteria(Concept.class)).build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} concept states exported", conceptLines);
+	}
+
+	private Query exportDescriptions(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, BranchCriteria selectionBranchCriteria, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+		Query descriptionBranchCriteria = selectionBranchCriteria.getEntityBranchCriteria(Description.class);
+		BoolQuery.Builder descriptionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
+		descriptionContentQuery.mustNot(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
+		int descriptionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_Description_", filenameEffectiveDate, exportType, zipOutputStream,
+				descriptionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} description states exported", descriptionLines);
+		return descriptionBranchCriteria;
+	}
+
+	private void exportTextDefinitions(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, Query descriptionBranchCriteria, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+		BoolQuery.Builder textDefinitionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
+		textDefinitionContentQuery.must(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
+		int textDefinitionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_TextDefinition_", filenameEffectiveDate, exportType, zipOutputStream,
+				textDefinitionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} text defintion states exported", textDefinitionLines);
+	}
+
+	private void exportRelationshipsAllTypes(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, BranchCriteria selectionBranchCriteria, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+		// Write Stated Relationships
+		Query relationshipBranchCritera = selectionBranchCriteria.getEntityBranchCriteria(Relationship.class);
+		BoolQuery.Builder relationshipQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, relationshipBranchCritera);
+		relationshipQuery.must(termQuery(Relationship.Fields.CHARACTERISTIC_TYPE_ID, Concepts.STATED_RELATIONSHIP));
+		int statedRelationshipLines = exportComponents(Relationship.class, entryDirectoryPrefix, "Terminology/", "sct2_StatedRelationship_", filenameEffectiveDate, exportType, zipOutputStream,
+				relationshipQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} stated relationship states exported", statedRelationshipLines);
+
+		// Write Inferred non-concrete Relationships
+		relationshipQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, relationshipBranchCritera);
+		// Not 'stated' will include inferred and additional
+		relationshipQuery.mustNot(termQuery(Relationship.Fields.CHARACTERISTIC_TYPE_ID, Concepts.STATED_RELATIONSHIP));
+		relationshipQuery.must(existsQuery(Relationship.Fields.DESTINATION_ID));
+		int inferredRelationshipLines = exportComponents(Relationship.class, entryDirectoryPrefix, "Terminology/", "sct2_Relationship_", filenameEffectiveDate, exportType, zipOutputStream,
+				relationshipQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} inferred (non-concrete) and additional relationship states exported", inferredRelationshipLines);
+
+		// Write Concrete Inferred Relationships
+		relationshipQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, relationshipBranchCritera);
+		relationshipQuery.must(termQuery(Relationship.Fields.CHARACTERISTIC_TYPE_ID, Concepts.INFERRED_RELATIONSHIP));
+		relationshipQuery.must(existsQuery(Relationship.Fields.VALUE));
+		int inferredConcreteRelationshipLines = exportComponents(Relationship.class, entryDirectoryPrefix, "Terminology/", "sct2_RelationshipConcreteValues_", filenameEffectiveDate, exportType,
+				zipOutputStream,
+				relationshipQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} concrete inferred relationship states exported", inferredConcreteRelationshipLines);
+	}
+
+	private void exportIdentifiers(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, BranchCriteria selectionBranchCriteria, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+		BoolQuery.Builder identifierContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, selectionBranchCriteria.getEntityBranchCriteria(Identifier.class));
+		int identifierLines = exportComponents(Identifier.class, entryDirectoryPrefix, "Terminology/", "sct2_Identifier_", filenameEffectiveDate, exportType, zipOutputStream,
+				identifierContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} identifier states exported", identifierLines);
+	}
+
+	private void exportRefsetMembers(String branchPath, String filenameEffectiveDate, RF2Type exportType, boolean forClassification, String transientEffectiveTime,
+			String startEffectiveTime, Set<String> moduleIds, Set<String> refsetIds, BranchCriteria allContentBranchCriteria, BranchCriteria selectionBranchCriteria, boolean refsetOnlyExport, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+
+		List<ReferenceSetType> referenceSetTypes = getReferenceSetTypes(allContentBranchCriteria.getEntityBranchCriteria(ReferenceSetType.class)).stream()
+				.filter(type -> !forClassification || refsetTypesRequiredForClassification.contains(type.getConceptId()))
+				.toList();
+
+		logger.info("{} Reference Set Types found for this export: {}", referenceSetTypes.size(), referenceSetTypes);
+
+		Query memberBranchCriteria = selectionBranchCriteria.getEntityBranchCriteria(ReferenceSetMember.class);
+		for (ReferenceSetType referenceSetType : referenceSetTypes) {
+			List<Long> refsetsOfThisType = new ArrayList<>(queryService.findDescendantIdsAsUnion(allContentBranchCriteria, true, Collections.singleton(Long.parseLong(referenceSetType.getConceptId()))));
+			refsetsOfThisType.add(Long.parseLong(referenceSetType.getConceptId()));
+			for (Long refsetToExport : refsetsOfThisType) {
+				exportRefset(branchPath, filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds, refsetIds, refsetOnlyExport, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name, referenceSetType, refsetToExport, memberBranchCriteria, refsetsOfThisType);
+			}
+		}
+	}
+
+	private void exportRefset(String branchPath, String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime,
+			String startEffectiveTime, Set<String> moduleIds, Set<String> refsetIds, boolean refsetOnlyExport, String entryDirectoryPrefix,
+			ZipOutputStream zipOutputStream, String codeSystemRF2Name, ReferenceSetType referenceSetType, Long refsetToExport, Query memberBranchCriteria,
+			List<Long> refsetsOfThisType) {
+
+		if (!refsetOnlyExport || refsetIds.contains(refsetToExport.toString())) {
+			if (Concepts.MODULE_DEPENDENCY_REFERENCE_SET.equals(String.valueOf(refsetToExport))) {
+				moduleIds.addAll(sBranchService.getModules(branchPath));
+			}
+
+			BoolQuery.Builder memberQueryBuilder = getContentQuery(exportType, moduleIds, startEffectiveTime, memberBranchCriteria);
+			memberQueryBuilder.must(termQuery(ReferenceSetMember.Fields.REFSET_ID, refsetToExport));
+			Query memberQuery = memberQueryBuilder.build()._toQuery();
+			long memberCount = elasticsearchOperations.count(getNativeSearchQuery(memberQuery), ReferenceSetMember.class);
+			if (memberCount > 0) {
+				logger.info("Exporting Reference Set {} {} with {} members", refsetToExport, referenceSetType.getName(), memberCount);
+				String exportDir = referenceSetType.getExportDir();
+				String entryDirectory = !exportDir.startsWith("/") ? "Refset/" + exportDir + "/" : exportDir.substring(1) + "/";
+				String entryFilenamePrefix = (!entryDirectory.startsWith("Terminology/") ? "der2_" : "sct2_") + referenceSetType.getFieldTypes() + "Refset_" + referenceSetType.getName() + (refsetsOfThisType.size() > 1 ? refsetToExport : "");
+				exportComponents(
+						ReferenceSetMember.class,
+						entryDirectoryPrefix, entryDirectory,
+						entryFilenamePrefix,
+						filenameEffectiveDate,
+						exportType,
+						zipOutputStream,
+						memberQuery,
+						transientEffectiveTime,
+						referenceSetType.getFieldNameList(),
+						codeSystemRF2Name,
+						null);
+			}
 		}
 	}
 
