@@ -218,34 +218,26 @@ public class ExportService {
 			}
 		}
 
+		boolean refsetOnlyExport = refsetIds != null && !refsetIds.isEmpty();
+
 		try {
 			branchService.lockBranch(branchPath, branchMetadataHelper.getBranchLockMetadata("Exporting RF2 " + exportType.getName()));
 			File exportFile = File.createTempFile("export-" + new Date().getTime(), ".zip");
 			try (ZipOutputStream zipOutputStream = new ZipOutputStream(new FileOutputStream(exportFile))) {
 
-				boolean refsetOnlyExport = refsetIds != null && !refsetIds.isEmpty();
-
 				if (!refsetOnlyExport) {
 					// Write Concepts
-					int conceptLines = exportComponents(Concept.class, entryDirectoryPrefix, "Terminology/", "sct2_Concept_", filenameEffectiveDate, exportType, zipOutputStream,
-							getContentQuery(exportType, moduleIds, startEffectiveTime, selectionBranchCriteria.getEntityBranchCriteria(Concept.class)).build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-					logger.info("{} concept states exported", conceptLines);
+					exportConcepts(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+							entryDirectoryPrefix, zipOutputStream, selectionBranchCriteria, codeSystemRF2Name);
 
 					if (!forClassification) {
 						// Write Descriptions
-						Query descriptionBranchCriteria = selectionBranchCriteria.getEntityBranchCriteria(Description.class);
-						BoolQuery.Builder descriptionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
-						descriptionContentQuery.mustNot(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
-						int descriptionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_Description_", filenameEffectiveDate, exportType, zipOutputStream,
-								descriptionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-						logger.info("{} description states exported", descriptionLines);
+						Query descriptionBranchCriteria = exportDescriptions(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+								selectionBranchCriteria, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 
 						// Write Text Definitions
-						BoolQuery.Builder textDefinitionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
-						textDefinitionContentQuery.must(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
-						int textDefinitionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_TextDefinition_", filenameEffectiveDate, exportType, zipOutputStream,
-								textDefinitionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
-						logger.info("{} text defintion states exported", textDefinitionLines);
+						exportTextDefinitions(filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds,
+								descriptionBranchCriteria, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 					}
 
 					if (!languageOnly) {
@@ -269,6 +261,30 @@ public class ExportService {
 		} finally {
 			branchService.unlock(branchPath);
 		}
+	}
+
+	private void exportConcepts(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, BranchCriteria selectionBranchCriteria, String codeSystemRF2Name) {
+		int conceptLines = exportComponents(Concept.class, entryDirectoryPrefix, "Terminology/", "sct2_Concept_", filenameEffectiveDate, exportType, zipOutputStream,
+				getContentQuery(exportType, moduleIds, startEffectiveTime, selectionBranchCriteria.getEntityBranchCriteria(Concept.class)).build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} concept states exported", conceptLines);
+	}
+
+	private Query exportDescriptions(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, BranchCriteria selectionBranchCriteria, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+		Query descriptionBranchCriteria = selectionBranchCriteria.getEntityBranchCriteria(Description.class);
+		BoolQuery.Builder descriptionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
+		descriptionContentQuery.mustNot(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
+		int descriptionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_Description_", filenameEffectiveDate, exportType, zipOutputStream,
+				descriptionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} description states exported", descriptionLines);
+		return descriptionBranchCriteria;
+	}
+
+	private void exportTextDefinitions(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, Query descriptionBranchCriteria, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+		BoolQuery.Builder textDefinitionContentQuery = getContentQuery(exportType, moduleIds, startEffectiveTime, descriptionBranchCriteria);
+		textDefinitionContentQuery.must(termQuery(Description.Fields.TYPE_ID, Concepts.TEXT_DEFINITION));
+		int textDefinitionLines = exportComponents(Description.class, entryDirectoryPrefix, "Terminology/", "sct2_TextDefinition_", filenameEffectiveDate, exportType, zipOutputStream,
+				textDefinitionContentQuery.build()._toQuery(), transientEffectiveTime, null, codeSystemRF2Name, null);
+		logger.info("{} text defintion states exported", textDefinitionLines);
 	}
 
 	private void exportRelationshipsAllTypes(String filenameEffectiveDate, RF2Type exportType, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds, BranchCriteria selectionBranchCriteria, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
