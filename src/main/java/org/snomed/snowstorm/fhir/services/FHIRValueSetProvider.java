@@ -14,6 +14,7 @@ import org.hl7.fhir.r4.model.OperationOutcome.IssueType;
 import org.snomed.snowstorm.fhir.config.FHIRConstants;
 import org.snomed.snowstorm.fhir.domain.FHIRValueSet;
 import org.snomed.snowstorm.fhir.domain.SearchFilter;
+import org.snomed.snowstorm.fhir.pojo.FHIRCodeValidationRequest;
 import org.snomed.snowstorm.fhir.pojo.ValueSetExpansionParameters;
 import org.snomed.snowstorm.fhir.repositories.FHIRValueSetRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,9 @@ public class FHIRValueSetProvider implements IResourceProvider, FHIRConstants {
 
 	@Autowired
 	private FHIRValueSetService valueSetService;
+
+	@Autowired
+	private FHIRValueSetFinderService valueSetFinderService;
 
 	@Autowired
 	private FhirContext fhirContext;
@@ -92,7 +96,7 @@ public class FHIRValueSetProvider implements IResourceProvider, FHIRConstants {
 		} else {
 			FHIRHelper.required("url", url);
 			FHIRHelper.required("version", version);
-			valueSetService.find(url.getValueAsString(), version).ifPresent(vs -> {
+			valueSetFinderService.find(url.getValueAsString(), version).ifPresent(vs -> {
 				valuesetRepository.deleteById(vs.getId());
 				outcome.setId(new IdType("ValueSet", vs.getId(), version));
 			});

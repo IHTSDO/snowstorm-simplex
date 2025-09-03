@@ -45,6 +45,9 @@ public class FHIRLoadPackageService {
 	private FHIRValueSetService valueSetService;
 
 	@Autowired
+	private FHIRValueSetFinderService valueSetFinderService;
+
+	@Autowired
 	private FHIRConceptService fhirConceptService;
 
 	@Autowired

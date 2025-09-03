@@ -1,17 +1,13 @@
 package org.snomed.snowstorm.fhir.services;
 
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
-import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
-import com.google.common.base.Strings;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.hl7.fhir.r4.model.*;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.snomed.snowstorm.core.data.domain.ConceptMini;
-import org.snomed.snowstorm.core.data.domain.Concepts;
 import org.snomed.snowstorm.core.data.domain.QueryConcept;
 import org.snomed.snowstorm.core.data.domain.ReferenceSetMember;
 import org.snomed.snowstorm.core.data.services.ConceptService;
@@ -33,13 +29,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.*;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
-import org.springframework.data.elasticsearch.client.elc.Queries;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.stereotype.Service;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -51,8 +44,6 @@ import static java.lang.Boolean.TRUE;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
 import static org.snomed.snowstorm.config.Config.DEFAULT_LANGUAGE_CODE;
-import static org.ihtsdo.otf.RF2Constants.LANG_EN;
-import static org.snomed.snowstorm.core.data.services.ReferenceSetMemberService.AGGREGATION_MEMBER_COUNTS_BY_REFERENCE_SET;
 import static org.snomed.snowstorm.core.util.CollectionUtils.orEmpty;
 import static org.snomed.snowstorm.fhir.services.FHIRHelper.*;
 import static org.snomed.snowstorm.fhir.utils.FHIRPageHelper.toPage;
@@ -77,9 +68,6 @@ public class FHIRValueSetService implements FHIRConstants {
 	private FHIRValueSetRepository valueSetRepository;
 
 	@Autowired
-	private ReferenceSetMemberService snomedRefsetService;
-
-	@Autowired
 	private QueryService snomedQueryService;
 
 	@Autowired
@@ -88,7 +76,20 @@ public class FHIRValueSetService implements FHIRConstants {
 	@Autowired
 	private ElasticsearchOperations elasticsearchOperations;
 
-	private final Map<String, Set<String>> codeSystemVersionToRefsetsWithMembersCache = new HashMap<>();
+	@Autowired
+	private FHIRValueSetFinderService vsFinderService;
+
+	@Autowired
+	private FHIRValueSetCycleDetectionService vsCycleDetectionService;
+
+	@Autowired
+	private FHIRValueSetCodeValidationService codeValidationService;
+
+	@Autowired
+	private FHIRValueSetConstraintsService constraintsService;
+
+	@Autowired
+	private FHIRWarningsService warningsService;
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -238,7 +239,7 @@ public class FHIRValueSetService implements FHIRConstants {
 			int offsetRequested = (int) pageRequest.getOffset();
 			int limitRequested = (int) (pageRequest.getOffset() + pageRequest.getPageSize());
 
-			QueryService.ConceptQueryBuilder conceptQuery = getSnomedConceptQuery(filter, activeOnly, codeSelectionCriteria, languageDialects);
+			QueryService.ConceptQueryBuilder conceptQuery = vsFinderService.getSnomedConceptQuery(filter, activeOnly, codeSelectionCriteria, languageDialects);
 
 			int totalResults = 0;
 			List<Long> conceptsToLoad;
@@ -291,7 +292,7 @@ public class FHIRValueSetService implements FHIRConstants {
 			// FHIR Concept Expansion (non-SNOMED)
 			String sortField = filter != null ? "displayLen" : CODE;
 			pageRequest = PageRequest.of(pageRequest.getPageNumber(), pageRequest.getPageSize(), Sort.Direction.ASC, sortField);
-			BoolQuery fhirConceptQuery = getFhirConceptQuery(codeSelectionCriteria, filter).build();
+			BoolQuery fhirConceptQuery = vsFinderService.getFhirConceptQuery(codeSelectionCriteria, filter).build();
 
 			int offsetRequested = (int) pageRequest.getOffset();
 			int limitRequested = (int) (pageRequest.getOffset() + pageRequest.getPageSize());
