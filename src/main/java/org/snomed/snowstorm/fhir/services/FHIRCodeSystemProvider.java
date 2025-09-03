@@ -21,7 +21,6 @@ import org.hl7.fhir.r4.model.*;
 import org.hl7.fhir.r4.model.OperationOutcome.IssueType;
 import org.jetbrains.annotations.NotNull;
 import org.snomed.snowstorm.core.data.domain.Concept;
-import org.snomed.snowstorm.core.data.domain.Description;
 import org.snomed.snowstorm.core.data.services.CodeSystemService;
 import org.snomed.snowstorm.core.data.services.MultiSearchService;
 import org.snomed.snowstorm.core.pojo.LanguageDialect;
@@ -337,63 +336,16 @@ public class FHIRCodeSystemProvider implements IResourceProvider, FHIRConstants 
 		FHIRCodeSystemVersionParams codeSystemParams = getCodeSystemVersionParams(id, url, version, coding);
 		return validateCode(codeSystemParams, fhirHelper.recoverCode(code, coding), display, request.getHeader(ACCEPT_LANGUAGE_HEADER));
 	}
-	
+
 	private Parameters validateCode(
 			FHIRCodeSystemVersionParams codeSystemParams,
 			String code,
 			String display,
 			String acceptLanguageHeader) {
-
 		List<LanguageDialect> languageDialects = fhirHelper.getLanguageDialects(null, acceptLanguageHeader);
-		if (codeSystemParams.isSnomed()) {
-			ConceptAndSystemResult conceptAndSystemResult = fhirCodeSystemService.findSnomedConcept(code, languageDialects, codeSystemParams);
-			Concept concept = conceptAndSystemResult.concept();
-			FHIRCodeSystemVersion codeSystemVersion = conceptAndSystemResult.codeSystemVersion();
 
-			boolean result = false;
-			String message = conceptAndSystemResult.message();
-			String displayOut = null;
-			if (concept != null) {
-				if (display == null) {
-					result = true;
-				} else {
-					String displayLower = display.toLowerCase();
-					if (concept.getPt().getTerm().toLowerCase().equals(displayLower)) {
-						result = true;
-					} else {
-						for (Description d : concept.getActiveDescriptions()) {
-							if (d.getTerm().toLowerCase().equals(displayLower)) {
-								message = "Display term is acceptable, but not the preferred synonym in the language/dialect specified.";
-								result = true;
-								break;
-							}
-						}
-						if (!result) {
-							message = "Code exists, but the display term is not recognised.";
-						}
-					}
-				}
-				displayOut = concept.getPt().getTerm();
-			} else {
-				message = "The code was not found in the specified code system.";
-				if (conceptAndSystemResult.message() != null) {
-					message = conceptAndSystemResult.message();
-				}
-			}
-			Parameters parameters = new Parameters();
-			parameters.addParameter(RESULT, result);
-			if (concept != null) {
-				parameters.addParameter(INACTIVE, !concept.isActive());
-			}
-			if (message != null) {
-				parameters.addParameter(MESSAGE, message);
-			}
-			if (displayOut != null) {
-				parameters.addParameter(DISPLAY, displayOut);
-			}
-			parameters.addParameter(SYSTEM, codeSystemVersion.getUrl());
-			parameters.addParameter(VERSION, codeSystemVersion.getVersion());
-			return parameters;
+		if (codeSystemParams.isSnomed()) {
+			return validateSnomedCode(code, display, languageDialects, codeSystemParams);
 		} else {
 			FHIRCodeSystemVersion codeSystemVersion = fhirCodeSystemService.findCodeSystemVersionOrThrow(codeSystemParams);
 			FHIRConcept concept = fhirConceptService.findConcept(codeSystemVersion, code);

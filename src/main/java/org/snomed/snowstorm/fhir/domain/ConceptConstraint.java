@@ -16,8 +16,8 @@ public class ConceptConstraint {
 	public ConceptConstraint() {
 	}
 
-	public ConceptConstraint(Collection<String> code) {
-		this.code = code;
+	public ConceptConstraint(Collection<String> codes) {
+		this.codes = codes;
 	}
 
 	public boolean isSimpleCodeSet() {
@@ -43,8 +43,13 @@ public class ConceptConstraint {
 		return ecl != null;
 	}
 
-	public Collection<String> getCode() {
-		return code;
+	public Collection<String> getCodes() {
+		return codes;
+	}
+
+	public ConceptConstraint setCodes(Set<String> codes) {
+		this.codes = codes;
+		return this;
 	}
 
 	public Set<String> getParent() {

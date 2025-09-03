@@ -176,20 +176,47 @@ public class FHIRCodeSystemService {
 		}
 
 		if (systemVersionParams.getId() != null) {
-			// Crosscheck version found by id against any other system params
-			String requestedCodeSystemUrl = systemVersionParams.getCodeSystem();
-			if (requestedCodeSystemUrl != null && !requestedCodeSystemUrl.equals(codeSystemVersion.getUrl())) {
-				throw exception(String.format("The requested system URL '%s' does not match the URL '%s' of the code system found using identifier '%s'.",
-						requestedCodeSystemUrl, codeSystemVersion.getUrl(), codeSystemVersion.getId()), OperationOutcome.IssueType.INVALID, 400);
-			}
-			String requestedVersion = systemVersionParams.getVersion();
-			if (requestedVersion != null && !requestedVersion.isEmpty() && !requestedVersion.equals(codeSystemVersion.getVersion())) {
-				throw exception(String.format("The requested version '%s' does not match the version '%s' of the code system found using identifier '%s'.",
-						requestedVersion, codeSystemVersion.getVersion(), codeSystemVersion.getId()), OperationOutcome.IssueType.INVALID, 400);
-			}
+			verifySystemVersionParams(systemVersionParams, codeSystemVersion);
 		}
 
 		return codeSystemVersion;
+	}
+
+	private static void verifySystemVersionParams(FHIRCodeSystemVersionParams systemVersionParams, FHIRCodeSystemVersion codeSystemVersion) {
+		// Crosscheck version found by id against any other system params
+		String requestedCodeSystemUrl = systemVersionParams.getCodeSystem();
+		if (requestedCodeSystemUrl != null && !requestedCodeSystemUrl.equals(codeSystemVersion.getUrl())) {
+			throw exception(String.format("The requested system URL '%s' does not match the URL '%s' of the code system found using identifier '%s'.",
+					requestedCodeSystemUrl, codeSystemVersion.getUrl(), codeSystemVersion.getId()), OperationOutcome.IssueType.INVALID, 400);
+		}
+		String requestedVersion = systemVersionParams.getVersion();
+		if (requestedVersion != null && !requestedVersion.isEmpty() && !requestedVersion.equals(codeSystemVersion.getVersion())) {
+			throw exception(String.format("The requested version '%s' does not match the version '%s' of the code system found using identifier '%s'.",
+					requestedVersion, codeSystemVersion.getVersion(), codeSystemVersion.getId()), OperationOutcome.IssueType.INVALID, 400);
+		}
+	}
+
+	private void throwExceptionForMissingCodeSystemVersion(FHIRCodeSystemVersionParams systemVersionParams) {
+		String codeSystem = systemVersionParams.getCodeSystem() + (systemVersionParams.getVersion() == null ? "*" : format("|%s", systemVersionParams.getVersion()));
+		List<FHIRCodeSystemVersion> supplements = getSupplements(codeSystem, systemVersionParams.getVersion()==null);
+		if(!supplements.isEmpty()){
+			String codeSystemWithVersionIfFound = supplements.stream()
+					.flatMap(supp -> supp.getExtensions().stream())
+					.map(FHIRExtension::getValue)
+					.filter(Objects::nonNull)
+					.filter(ext -> ext.contains(systemVersionParams.getCodeSystem()))
+					.findAny().orElse(systemVersionParams.getCodeSystem());
+			String message = format("CodeSystem %s is a supplement, so can't be used as a value in Coding.system", codeSystemWithVersionIfFound);
+			CodeableConcept cc = new CodeableConcept(new Coding("http://hl7.org/fhir/tools/CodeSystem/tx-issue-type", "invalid-data",null)).setText(message);
+			OperationOutcome oo = FHIRHelper.createOperationOutcomeWithIssue(cc, OperationOutcome.IssueSeverity.ERROR, "Coding.system", OperationOutcome.IssueType.INVALID, Collections.singletonList(new Extension("http://hl7.org/fhir/StructureDefinition/operationoutcome-message-id", new StringType("CODESYSTEM_CS_NO_SUPPLEMENT"))), null);
+			throw new SnowstormFHIRServerResponseException(400,message,oo);
+		} else {
+			FHIRCodeSystemVersion other = findCodeSystemVersion(new FHIRCodeSystemVersionParams(systemVersionParams.getCodeSystem()));
+			String message = format("The CodeSystem %s version %s is unknown to this server. Valid versions: [%s]", systemVersionParams.getCodeSystem(), systemVersionParams.getVersion(), other==null?"":other.getVersion());
+			CodeableConcept cc = new CodeableConcept(new Coding("http://hl7.org/fhir/tools/CodeSystem/tx-issue-type", "not-found",null)).setText(message);
+			OperationOutcome oo = FHIRHelper.createOperationOutcomeWithIssue(cc, OperationOutcome.IssueSeverity.ERROR, "Coding.system", OperationOutcome.IssueType.NOTFOUND, Arrays.asList(new Extension("https://github.com/IHTSDO/snowstorm/missing-codesystem-version", new CanonicalType(CanonicalUri.of(systemVersionParams.getCodeSystem(), systemVersionParams.getVersion()).toString())),new Extension("https://github.com/IHTSDO/snowstorm/available-codesystem-version", new CanonicalType(other==null?"":other.getCanonical()))), null);
+			throw new SnowstormFHIRServerResponseException(400,message,oo);
+		}
 	}
 
 	public FHIRCodeSystemVersion findCodeSystemVersion(FHIRCodeSystemVersionParams systemVersionParams) {
@@ -215,48 +242,61 @@ public class FHIRCodeSystemService {
 
 	public FHIRCodeSystemVersion getSnomedVersionOrThrow(FHIRCodeSystemVersionParams params) {
 		if (!params.isSnomed()) {
-			throw exception("Failed to find SNOMED branch for non SCT code system.", OperationOutcome.IssueType.CONFLICT, 500);
+			throw exception("Failed to find SNOMED branch for non SCT code system.",
+					OperationOutcome.IssueType.CONFLICT, 500);
 		}
 
-		org.snomed.snowstorm.core.data.domain.CodeSystem snomedCodeSystem;
-		String snomedModule = params.getSnomedModule();
-		if (snomedModule != null) {
-			snomedCodeSystem = snomedCodeSystemService.findByUriModule(snomedModule);
-		} else {
-			// Use root code system
-			snomedCodeSystem = snomedCodeSystemService.find(CodeSystemService.SNOMEDCT);
-		}
-		if (snomedCodeSystem == null) {
-			throw exception(format("The requested CodeSystem %s was not found.", params.toDiagnosticString()), OperationOutcome.IssueType.NOTFOUND, 404);
-		}
+		org.snomed.snowstorm.core.data.domain.CodeSystem snomedCodeSystem = resolveSnomedCodeSystem(params);
+
 		if (params.isUnversionedSnomed()) {
-			// Use working branch
 			return new FHIRCodeSystemVersion(snomedCodeSystem, true);
 		} else {
-			String shortName = snomedCodeSystem.getShortName();
-			String version = params.getVersion();
-			CodeSystemVersion snomedVersion;
-			if (version == null) {
-				// Use the latest published branch
-				snomedVersion = snomedCodeSystemService.findLatestVisibleVersion(shortName);
-				if (snomedVersion == null) {
-					// Fall back to any imported version
-					snomedVersion = snomedCodeSystemService.findLatestImportedVersion(shortName);
-				}
-				if (snomedVersion == null) {
-					throw exception(format("The latest version of the requested CodeSystem %s was not found.", params.toDiagnosticString()),
-							OperationOutcome.IssueType.NOTFOUND, 404);
-				}
-			} else {
-				snomedVersion = snomedCodeSystemService.findVersion(shortName, Integer.parseInt(version));
-				if (snomedVersion == null) {
-					throw exception(format("The requested CodeSystem version %s was not found.", params.toDiagnosticString()), OperationOutcome.IssueType.NOTFOUND, 404);
-				}
-			}
-			snomedVersion.setCodeSystem(snomedCodeSystem);
-			return new FHIRCodeSystemVersion(snomedVersion);
+			return new FHIRCodeSystemVersion(resolveSnomedVersion(snomedCodeSystem, params));
 		}
 	}
+
+	private org.snomed.snowstorm.core.data.domain.CodeSystem resolveSnomedCodeSystem(FHIRCodeSystemVersionParams params) {
+		String snomedModule = params.getSnomedModule();
+		org.snomed.snowstorm.core.data.domain.CodeSystem snomedCodeSystem = (snomedModule != null)
+				? snomedCodeSystemService.findByUriModule(snomedModule)
+				: snomedCodeSystemService.find(CodeSystemService.SNOMEDCT);
+
+		if (snomedCodeSystem == null) {
+			throw exception(format("The requested CodeSystem %s was not found.", params.toDiagnosticString()),
+					OperationOutcome.IssueType.NOTFOUND, 404);
+		}
+		return snomedCodeSystem;
+	}
+
+	private CodeSystemVersion resolveSnomedVersion(org.snomed.snowstorm.core.data.domain.CodeSystem snomedCodeSystem,
+	                                               FHIRCodeSystemVersionParams params) {
+		String shortName = snomedCodeSystem.getShortName();
+		String version = params.getVersion();
+		CodeSystemVersion snomedVersion;
+
+		if (version == null) {
+			snomedVersion = snomedCodeSystemService.findLatestVisibleVersion(shortName);
+			if (snomedVersion == null) {
+				snomedVersion = snomedCodeSystemService.findLatestImportedVersion(shortName);
+			}
+			if (snomedVersion == null) {
+				throw exception(format("The latest version of the requested CodeSystem %s was not found.",
+								params.toDiagnosticString()),
+						OperationOutcome.IssueType.NOTFOUND, 404);
+			}
+		} else {
+			snomedVersion = snomedCodeSystemService.findVersion(shortName, Integer.parseInt(version));
+			if (snomedVersion == null) {
+				throw exception(format("The requested CodeSystem version %s was not found.",
+								params.toDiagnosticString()),
+						OperationOutcome.IssueType.NOTFOUND, 404);
+			}
+		}
+
+		snomedVersion.setCodeSystem(snomedCodeSystem);
+		return snomedVersion;
+	}
+
 
 	private void wrap(FHIRCodeSystemVersion fhirCodeSystemVersion) {
 		if (fhirCodeSystemVersion.getVersion() == null) {

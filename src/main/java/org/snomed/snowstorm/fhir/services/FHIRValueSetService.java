@@ -370,7 +370,7 @@ public class FHIRValueSetService implements FHIRConstants {
 					}
 					return component;
 		})
-				.collect(Collectors.toList()));
+				.toList());
 		expansion.setOffset(conceptsPage.getNumber() * conceptsPage.getSize());
 		expansion.setTotal((int) conceptsPage.getTotalElements());
 		hapiValueSet.setExpansion(expansion);
@@ -814,7 +814,7 @@ public class FHIRValueSetService implements FHIRConstants {
 		if (inclusion.hasEcl()) {
 			return inclusion.getEcl();
 		}
-		return String.join(" OR ", inclusion.getCode());
+		return String.join(" OR ", inclusion.getCodes());
 	}
 
 	private void addQueryCriteria(ConceptConstraint inclusion, BoolQuery.Builder versionQuery, String valueSetUserRef) {
