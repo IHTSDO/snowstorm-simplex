@@ -58,14 +58,14 @@ import static org.snomed.snowstorm.fhir.services.FHIRHelper.*;
 import static org.snomed.snowstorm.fhir.utils.FHIRPageHelper.toPage;
 
 @Service
-public class FHIRValueSetService {
+public class FHIRValueSetService implements FHIRConstants {
 
 	// Constant to help with "?fhir_vs=refset"
 	public static final String REFSETS_WITH_MEMBERS = "Refsets";
 
 	private static final PageRequest PAGE_OF_ONE = PageRequest.of(0, 1);
 
-	private static List<Long> defaultSearchDescTypeIds = List.of(Concepts.FSN_L, Concepts.SYNONYM_L);
+	private static final List<Long> defaultSearchDescTypeIds = List.of(Concepts.FSN_L, Concepts.SYNONYM_L);
 
 	@Autowired
 	private FHIRCodeSystemService codeSystemService;
@@ -139,7 +139,7 @@ public class FHIRValueSetService {
 	}
 
 	public FHIRValueSet createOrUpdateValueset(ValueSet valueSet) {
-		if (valueSet.getUrl().contains("?fhir_vs")) {
+		if (valueSet.getUrl().contains(FHIR_VS)) {
 			throw exception("ValueSet url must not contain 'fhir_vs', this is reserved for implicit value sets.", OperationOutcome.IssueType.INVARIANT, 400);
 		}
 
@@ -175,7 +175,7 @@ public class FHIRValueSetService {
 		notSupported("excludeNested", params.getExcludeNested());
 		notSupported("excludeNotForUI", params.getExcludeNotForUI());
 		notSupported("excludePostCoordinated", params.getExcludePostCoordinated());
-		notSupported("version", params.getVersion());// Not part of the FHIR API spec but requested under MAINT-1363
+		notSupported(VERSION, params.getVersion());// Not part of the FHIR API spec but requested under MAINT-1363
 
 		ValueSet hapiValueSet = findOrInferValueSet(params.getId(), params.getUrl(), params.getValueSet());
 		if (hapiValueSet == null) {
@@ -289,7 +289,7 @@ public class FHIRValueSetService {
 			conceptsPage = new PageImpl<>(conceptsOnRequestedPage, pageRequest, totalResults);
 		} else {
 			// FHIR Concept Expansion (non-SNOMED)
-			String sortField = filter != null ? "displayLen" : "code";
+			String sortField = filter != null ? "displayLen" : CODE;
 			pageRequest = PageRequest.of(pageRequest.getPageNumber(), pageRequest.getPageSize(), Sort.Direction.ASC, sortField);
 			BoolQuery fhirConceptQuery = getFhirConceptQuery(codeSelectionCriteria, filter).build();
 
@@ -346,7 +346,7 @@ public class FHIRValueSetService {
 		expansion.setTimestamp(new Date());
 		allInclusionVersions.forEach(codeSystemVersion -> {
 				if (codeSystemVersion.getVersion() != null) {
-					expansion.addParameter(new ValueSet.ValueSetExpansionParameterComponent(new StringType("version"))
+					expansion.addParameter(new ValueSet.ValueSetExpansionParameterComponent(new StringType(VERSION))
 							.setValue(new CanonicalType(codeSystemVersion.getCanonical())));
 				}
 			}
@@ -626,13 +626,13 @@ public class FHIRValueSetService {
 		}
 
 		if (resolvedCodeSystemVersionsMatchingCodings.isEmpty()) {
-			response.addParameter("result", false);
+			response.addParameter(RESULT, false);
 			if (systemMatch) {
 				if (codings.size() == 1) {
 					Coding codingA = codings.iterator().next();
 					response.addParameter("message", format("The system '%s' is included in this ValueSet but the version '%s' is not.", codingA.getSystem(), codingA.getVersion()));
 				} else {
-					response.addParameter("message", "One or more codes in the CodableConcept are within a system included by this ValueSet but none of the versions match.");
+					response.addParameter(MESSAGE, "One or more codes in the CodableConcept are within a system included by this ValueSet but none of the versions match.");
 				}
 			} else {
 				if (codings.size() == 1) {
@@ -717,13 +717,13 @@ public class FHIRValueSetService {
 			idUrlCrosscheck(id, url, valueSet);
 
 			hapiValueSet = valueSet.getHapi();
-		} else if (FHIRHelper.isSnomedUri(url) && url.contains("?fhir_vs")) {
+		} else if (FHIRHelper.isSnomedUri(url) && url.contains(FHIR_VS)) {
 			// Create snomed implicit value set
 			hapiValueSet = createSnomedImplicitValueSet(url);
-		} else if (url != null && url.endsWith("?fhir_vs")) {
+		} else if (url != null && url.endsWith(FHIR_VS)) {
 			// Create implicit value set
 			FHIRValueSetCriteria includeCriteria = new FHIRValueSetCriteria();
-			includeCriteria.setSystem(url.replace("?fhir_vs", ""));
+			includeCriteria.setSystem(url.replace(FHIR_VS, ""));
 			FHIRValueSetCompose compose = new FHIRValueSetCompose();
 			compose.addInclude(includeCriteria);
 			FHIRValueSet valueSet = new FHIRValueSet();
@@ -848,7 +848,7 @@ public class FHIRValueSetService {
 					// constraint, =, [ECL]
 					// expression, =, Refsets - special case to deal with '?fhir_vs=refset'. Matches the Ontoserver compose for these, not part of the spec but at least consistent.
 					// expressions, =, true/false
-					if ("concept".equals(property)) {
+					if (CONCEPT.equals(property)) {
 						if (op == ValueSet.FilterOperator.ISA) {
 							if (Strings.isNullOrEmpty(value)) {
 								throw exception("Value missing for SNOMED CT ValueSet concept 'is-a' filter", OperationOutcome.IssueType.INVALID, 400);
@@ -930,7 +930,7 @@ public class FHIRValueSetService {
 					throw exception("This server does not expect any ValueSet property filters for ICD-10.", OperationOutcome.IssueType.NOTSUPPORTED, 400);
 				} else {
 					// Generic code system
-					if ("concept".equals(property) && op == ValueSet.FilterOperator.ISA) {
+					if (CONCEPT.equals(property) && op == ValueSet.FilterOperator.ISA) {
 						Set<String> singleton = Collections.singleton(value);
 						inclusionConstraints.add(new ConceptConstraint(singleton));
 						inclusionConstraints.add(new ConceptConstraint().setAncestor(singleton));
@@ -977,7 +977,7 @@ public class FHIRValueSetService {
 	 */
 	private String determineEcl(String url) {
 		String ecl;
-		if (url.endsWith("?fhir_vs")) {
+		if (url.endsWith(FHIR_VS)) {
 			// Return all of SNOMED CT in this situation
 			ecl = "*";
 		} else if (url.contains(IMPLICIT_ISA)) {
@@ -1016,7 +1016,7 @@ public class FHIRValueSetService {
 		if (bucketPage.getBuckets() != null && bucketPage.getBuckets().containsKey(AGGREGATION_MEMBER_COUNTS_BY_REFERENCE_SET)) {
 			allRefsets = bucketPage.getBuckets().get(AGGREGATION_MEMBER_COUNTS_BY_REFERENCE_SET).keySet().stream()
 					.map(s -> new ConceptMini(s, null))
-					.collect(Collectors.toList());
+					.toList();
 		}
 		Set<String> refsets = allRefsets.stream().map(ConceptMini::getConceptId).collect(Collectors.toSet());
 

@@ -40,6 +40,8 @@ public class FHIRHelper implements FHIRConstants {
 	private static final Pattern SNOMED_URI_MODULE_AND_VERSION_PATTERN = Pattern.compile("http://snomed.info/x?sct/(\\d+)/version/([\\d]{8})");
 	private static final Pattern SCT_ID_PATTERN = Pattern.compile("sct_(\\d)+_(\\d){8}");
 
+	private static final Pattern SCT_ID_PATTERN = Pattern.compile("sct_(\\d)+_(\\d){8}");
+
 	@Autowired
 	private DialectConfigurationService dialectService;
 
@@ -262,11 +264,9 @@ public class FHIRHelper implements FHIRConstants {
 	}
 
 	public void notSupportedSubsumesAcrossCodeSystemVersions(FHIRCodeSystemVersion codeSystemVersion, Coding coding) {
-		if (coding != null) {
-			if ((coding.getSystem() != null && !coding.getSystem().equals(codeSystemVersion.getUrl())) ||
-					(coding.getVersion() != null && coding.getVersion().equals(codeSystemVersion.getVersion()))) {
-				throw exception("This server does not support subsumes using multiple code systems/versions.", IssueType.NOTSUPPORTED, 400);
-			}
+		if (coding != null && ((coding.getSystem() != null && !coding.getSystem().equals(codeSystemVersion.getUrl())) ||
+					(coding.getVersion() != null && coding.getVersion().equals(codeSystemVersion.getVersion())))) {
+			throw exception("This server does not support subsumes using multiple code systems/versions.", IssueType.NOTSUPPORTED, 400);
 		}
 	}
 
@@ -333,21 +333,24 @@ public class FHIRHelper implements FHIRConstants {
 			if (codeSystemParams.isSnomed()) {
 				// Parse module and version from snomed version URI
 				// Either "http://snomed.info/sct/[sctid]" or "http://snomed.info/sct/[sctid]/version/[YYYYMMDD]"
-				Matcher matcher;
 				String versionWithoutParams = version.contains("?") ? version.substring(0, version.indexOf("?")) : version;
-				if ((matcher = SNOMED_URI_MODULE_PATTERN.matcher(versionWithoutParams)).matches()) {
+				Matcher matcher = SNOMED_URI_MODULE_PATTERN.matcher(versionWithoutParams);
+				if (matcher.matches()) {
 					codeSystemParams.setSnomedModule(matcher.group(1));
-				} else if ((matcher = SNOMED_URI_MODULE_AND_VERSION_PATTERN.matcher(versionWithoutParams)).matches()) {
-					if (codeSystemParams.isUnversionedSnomed()) {
-						throw exception("A specific version can not be requested when using " +
-								"the '" + SNOMED_URI_UNVERSIONED + "' code system.", IssueType.INVARIANT, 400);
-					}
-					codeSystemParams.setSnomedModule(matcher.group(1));
-					codeSystemParams.setVersion(matcher.group(2));
 				} else {
-					throw exception(format("The version parameter for the '" + SNOMED_URI + "' system must use the format " +
-							"'http://snomed.info/sct/[sctid]' or http://snomed.info/sct/[sctid]/version/[YYYYMMDD]. Version provided does not match: '%s'.", versionWithoutParams),
-							IssueType.INVARIANT, 400);
+					matcher = SNOMED_URI_MODULE_AND_VERSION_PATTERN.matcher(versionWithoutParams);
+					if (matcher.matches()) {
+						if (codeSystemParams.isUnversionedSnomed()) {
+							throw exception("A specific version can not be requested when using " +
+									"the '" + SNOMED_URI_UNVERSIONED + "' code system.", IssueType.INVARIANT, 400);
+						}
+						codeSystemParams.setSnomedModule(matcher.group(1));
+						codeSystemParams.setVersion(matcher.group(2));
+					} else {
+						throw exception(format("The version parameter for the '" + SNOMED_URI + "' system must use the format " +
+								"'http://snomed.info/sct/[sctid]' or http://snomed.info/sct/[sctid]/version/[YYYYMMDD]. Version provided does not match: '%s'.", versionWithoutParams),
+								IssueType.INVARIANT, 400);
+					}
 				}
 			} else {
 				// Take version param literally
@@ -432,8 +435,8 @@ public class FHIRHelper implements FHIRConstants {
 			return false;
 		}
 		String value = obj.toString();
-		if (obj instanceof Date) {
-			value = new SimpleDateFormat("yyyyMMdd").format((Date)obj);
+		if (obj instanceof Date date) {
+			value = new SimpleDateFormat("yyyyMMdd").format(date);
 		}
 		return stringMatches(value, searchTerm);
 	}

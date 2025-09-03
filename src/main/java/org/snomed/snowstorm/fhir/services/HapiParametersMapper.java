@@ -146,9 +146,9 @@ public class HapiParametersMapper implements FHIRConstants {
 		parameters.addParameter("code", concept.getCode());
 		addSystemAndVersion(parameters, codeSystemVersion);
 		if (!displayValidOrNull) {
-			parameters.addParameter("message", "The code exists but the display is not valid.");
+			parameters.addParameter(MESSAGE, "The code exists but the display is not valid.");
 		}
-		parameters.addParameter("display", concept.getDisplay());
+		parameters.addParameter(DISPLAY, concept.getDisplay());
 		return parameters;
 	}
 

@@ -31,8 +31,8 @@ public class FHIRValueSetCompose {
 		for (FHIRValueSetCriteria include : orEmpty(getInclude())) {
 			hapiCompose.addInclude(include.getHapi());
 		}
-		for (FHIRValueSetCriteria exclude : orEmpty(getExclude())) {
-			hapiCompose.addExclude(exclude.getHapi());
+		for (FHIRValueSetCriteria excludeCriteria : orEmpty(getExclude())) {
+			hapiCompose.addExclude(excludeCriteria.getHapi());
 		}
 		return hapiCompose;
 	}

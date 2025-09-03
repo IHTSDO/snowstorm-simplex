@@ -26,7 +26,6 @@ import static org.snomed.snowstorm.fhir.config.FHIRConstants.SNOMED_URI;
 public class FHIRConcept implements FHIRGraphNode {
 
 	public interface Fields {
-
 		String CODE_SYSTEM_VERSION = "codeSystemVersion";
 		String CODE = "code";
 		String DISPLAY = "display";
@@ -34,6 +33,7 @@ public class FHIRConcept implements FHIRGraphNode {
 		String PARENTS = "parents";
 		String ANCESTORS = "ancestors";
 	}
+
 	@Id
 	// Internal ID
 	private String id;
@@ -147,7 +147,7 @@ public class FHIRConcept implements FHIRGraphNode {
 		}
 
 		properties = new HashMap<>();
-		properties.put("inactive",Collections.singletonList(new FHIRProperty("inactive",null,Boolean.toString(!isActive()),FHIRProperty.BOOLEAN_TYPE)));
+		properties.put(INACTIVE,Collections.singletonList(new FHIRProperty(INACTIVE,null,Boolean.toString(!isActive()),FHIRProperty.BOOLEAN_TYPE)));
 	}
 
 	@Override

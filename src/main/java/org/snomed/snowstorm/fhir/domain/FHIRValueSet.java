@@ -10,7 +10,6 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
-import org.springframework.data.elasticsearch.annotations.Setting;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -113,7 +112,6 @@ public class FHIRValueSet {
 		valueSet.setDescription(description);
 		valueSet.setPurpose(purpose);
 		valueSet.setCopyright(copyright);
-
 		valueSet.setCompose(compose.getHapi());
 		return valueSet;
 	}

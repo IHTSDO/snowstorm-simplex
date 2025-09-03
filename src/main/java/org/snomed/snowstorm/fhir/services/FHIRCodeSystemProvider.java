@@ -242,7 +242,7 @@ public class FHIRCodeSystemProvider implements IResourceProvider, FHIRConstants 
 			@OperationParam(name="displayLanguage") String displayLanguage,
 			@OperationParam(name="property") List<CodeType> propertiesType ) {
 
-		mutuallyExclusive("code", code, "coding", coding);
+		mutuallyExclusive(CODE, code, CODING, coding);
 		notSupported("date", date);
 		FHIRCodeSystemVersionParams codeSystemVersion = fhirHelper.getCodeSystemVersionParams(system, version, coding);
 		return lookup(codeSystemVersion, fhirHelper.recoverCode(code, coding), displayLanguage, request.getHeader(ACCEPT_LANGUAGE_HEADER), propertiesType);
@@ -381,18 +381,18 @@ public class FHIRCodeSystemProvider implements IResourceProvider, FHIRConstants 
 				}
 			}
 			Parameters parameters = new Parameters();
-			parameters.addParameter("result", result);
+			parameters.addParameter(RESULT, result);
 			if (concept != null) {
-				parameters.addParameter("inactive", !concept.isActive());
+				parameters.addParameter(INACTIVE, !concept.isActive());
 			}
 			if (message != null) {
-				parameters.addParameter("message", message);
+				parameters.addParameter(MESSAGE, message);
 			}
 			if (displayOut != null) {
-				parameters.addParameter("display", displayOut);
+				parameters.addParameter(DISPLAY, displayOut);
 			}
-			parameters.addParameter("system", codeSystemVersion.getUrl());
-			parameters.addParameter("version", codeSystemVersion.getVersion());
+			parameters.addParameter(SYSTEM, codeSystemVersion.getUrl());
+			parameters.addParameter(VERSION, codeSystemVersion.getVersion());
 			return parameters;
 		} else {
 			FHIRCodeSystemVersion codeSystemVersion = fhirCodeSystemService.findCodeSystemVersionOrThrow(codeSystemParams);
@@ -481,18 +481,18 @@ public class FHIRCodeSystemProvider implements IResourceProvider, FHIRConstants 
 		String codeA = fhirHelper.recoverCode(codeAParam, codingA);
 		String codeB = fhirHelper.recoverCode(codeBParam, codingB);
 		if (codeA.equals(codeB) && fhirCodeSystemService.conceptExistsOrThrow(codeA, codeSystemVersion)) {
-			return pMapper.singleOutValue("outcome", "equivalent", codeSystemVersion);
+			return pMapper.singleOutValue(OUTCOME, "equivalent", codeSystemVersion);
 		}
 
 		// Test for A subsumes B, then B subsumes A
 		if (graphService.subsumes(codeA, codeB, codeSystemVersion)) {
-			return pMapper.singleOutValue("outcome", "subsumes", codeSystemVersion);
+			return pMapper.singleOutValue(OUTCOME, "subsumes", codeSystemVersion);
 		} else if (graphService.subsumes(codeB, codeA, codeSystemVersion)) {
-			return pMapper.singleOutValue("outcome", "subsumed-by", codeSystemVersion);
+			return pMapper.singleOutValue(OUTCOME, "subsumed-by", codeSystemVersion);
 		}
 		fhirCodeSystemService.conceptExistsOrThrow(codeA, codeSystemVersion);
 		fhirCodeSystemService.conceptExistsOrThrow(codeB, codeSystemVersion);
-		return pMapper.singleOutValue("outcome", "not-subsumed", codeSystemVersion);
+		return pMapper.singleOutValue(OUTCOME, "not-subsumed", codeSystemVersion);
 	}
 
 	@Override

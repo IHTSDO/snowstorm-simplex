@@ -3,13 +3,19 @@ package org.snomed.snowstorm.fhir.config;
 import java.util.*;
 
 import org.hl7.fhir.r4.model.CodeType;
-import org.hl7.fhir.r4.model.StringType;
 
 public interface FHIRConstants {
 
 	//Constant words and phrases 
 	StringType CHILD = new StringType("child");
 	String CODE = "code";
+	String CODING = "coding";
+	String CODING_CODE = "coding.code";
+	String CODING_DISPLAY = "coding.display";
+	String CODING_SYSTEM = "coding.system";
+	String CODEABLE_CONCEPT = "codeableConcept";
+	String CONCEPT = "concept";
+	String DATE = "date";
 	String DESIGNATION = "designation";
 	String DISPLAY = "display";
 	StringType EFFECTIVE_TIME = new StringType("effectiveTime");
@@ -33,6 +39,7 @@ public interface FHIRConstants {
 	String SNOMED_INTERNATIONAL = "SNOMED International";
 	String SNOMED_URI = "http://snomed.info/sct";
 	String SNOMED_URI_UNVERSIONED = "http://snomed.info/xsct";
+	String SYSTEM = "system";
 	String UNVERSIONED = "UNVERSIONED";
 	int UNVERSIONED_SCT_VERSION = -1;
 	String VERSION = "/version/";

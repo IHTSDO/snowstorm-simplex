@@ -80,7 +80,7 @@ public final class ValueSetExpansionParameters {
 			throw FHIRHelper.exception(format("Parameter 'offset' '%s' must be a multiplication of 'count' (page size) '%s'.", offset, pageSize),
 					OperationOutcome.IssueType.INVALID, 400);
 		}
-		return ControllerHelper.getPageRequest(offset, pageSize, sort);
+		return ControllerHelper.getPageRequest(offsetInt, pageSize, sort);
 
 	}
 
