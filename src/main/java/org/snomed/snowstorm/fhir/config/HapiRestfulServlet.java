@@ -11,8 +11,6 @@ import org.snomed.snowstorm.fhir.services.*;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
-import jakarta.servlet.ServletException;
-
 public class HapiRestfulServlet extends RestfulServer {
 
 	private static final long serialVersionUID = 1L;
