@@ -314,7 +314,7 @@ class ExportServiceTest extends AbstractTest {
 			assertTrue(lines.contains("125022\t\t1\t900000000000207008\t123001\t100002\t0\t116680003\t900000000000011006\t900000000000451002"));
 			assertTrue(lines.contains("125023\t\t1\t900000000000207008\t123001\t100003\t0\t116680003\t900000000000227009\t900000000000451002"));
 
-			// Inferred Concrete Relationships
+			// Concrete Relationships
 			ZipEntry concreteRelationships = zipInputStream.getNextEntry();
 			assertEquals("SnomedCT_Export/Delta/Terminology/sct2_RelationshipConcreteValues_Delta_US_20210801.txt", concreteRelationships.getName());
 			lines = getLines(zipInputStream);
