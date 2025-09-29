@@ -99,6 +99,9 @@ public class ConceptController {
 	@Autowired
 	private IdentifierComponentService identifierComponentService;
 
+	@Autowired
+	private ConceptChangeReportService conceptChangeReportService;
+
 	@Value("${snowstorm.rest-api.allowUnlimitedConceptPagination:false}")
 	private boolean allowUnlimitedConceptPagination;
 
@@ -197,7 +200,7 @@ public class ConceptController {
 		}
 		if (returnIdOnly) {
 			SearchAfterPage<Long> longsPage = queryService.searchForIds(queryBuilder, branch, pageRequest);
-			SearchAfterPageImpl<String> stringPage = new SearchAfterPageImpl<>(longsPage.stream().map(Object::toString).collect(Collectors.toList()),
+			SearchAfterPageImpl<String> stringPage = new SearchAfterPageImpl<>(longsPage.stream().map(Object::toString).toList(),
 					longsPage.getPageable(), longsPage.getTotalElements(), longsPage.getSearchAfter());
 			ItemsPage<String> resultsPage = new ItemsPage<>(stringPage);
 			return new HttpEntity<>(resultsPage, SearchAfterHelper.getSearchAfterHeader(longsPage.getSearchAfter()));
@@ -226,6 +229,29 @@ public class ConceptController {
 
 		ConceptMini concept = conceptMinis.getTotalElements() > 0 ? conceptMinis.getResultsMap().values().iterator().next() : null;
 		return ControllerHelper.throwIfNotFound("Concept", concept);
+	}
+
+	@Operation(summary = "Get list of concepts changed since a given effective-time.",
+		description = """
+				Get the list of published concepts changed since a specific effect-time on a given branch.
+
+				Concept, description and relationship records are checked. Optionally filter component types checked.
+				Only concept codes are returned.
+				"""
+				)
+	@GetMapping(value = "/{branch}/concepts/change-report", produces = {"application/json", "text/csv"})
+	public HttpEntity<ItemsPage<Long>> findChangedConcepts(
+			@PathVariable String branch,
+
+			@Parameter(description = "Concept must have changed since effective time to match. Use 'changeTypes' to control what types of changes count.")
+			@RequestParam int changedSince,
+
+			@Parameter(description = "To be used in combination with 'changedSince'. The set of change types that count in the selection process.")
+			@RequestParam(required = false) Set<ConceptChangeType> changeTypes) {
+
+		branch = BranchPathUriUtil.decodePath(branch);
+		List<Long> conceptIds = conceptChangeReportService.findChangedConcepts(branch, changedSince, changeTypes != null ? changeTypes : Collections.emptySet());
+		return new HttpEntity<>(new ItemsPage<>(conceptIds));
 	}
 
 	@GetMapping(value = "/browser/{branch}/concepts/{componentId}/concept-or-identifier-ref-concept", produces = {"application/json", "text/csv"})
