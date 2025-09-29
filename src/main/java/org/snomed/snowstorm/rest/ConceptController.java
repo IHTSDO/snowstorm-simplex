@@ -240,7 +240,7 @@ public class ConceptController {
 				"""
 				)
 	@GetMapping(value = "/{branch}/concepts/change-report", produces = {"application/json", "text/csv"})
-	public HttpEntity<ItemsPage<Long>> findChangedConcepts(
+	public HttpEntity<ItemsPage<String>> findChangedConcepts(
 			@PathVariable String branch,
 
 			@Parameter(description = "Concept must have changed since effective time to match. Use 'changeTypes' to control what types of changes count.")
@@ -251,7 +251,7 @@ public class ConceptController {
 
 		branch = BranchPathUriUtil.decodePath(branch);
 		List<Long> conceptIds = conceptChangeReportService.findChangedConcepts(branch, changedSince, changeTypes != null ? changeTypes : Collections.emptySet());
-		return new HttpEntity<>(new ItemsPage<>(conceptIds));
+		return new HttpEntity<>(new ItemsPage<>(conceptIds.stream().map(Object::toString).toList()));
 	}
 
 	@GetMapping(value = "/browser/{branch}/concepts/{componentId}/concept-or-identifier-ref-concept", produces = {"application/json", "text/csv"})
