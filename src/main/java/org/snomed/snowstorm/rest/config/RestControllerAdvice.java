@@ -14,6 +14,7 @@ import org.springframework.data.elasticsearch.UncategorizedElasticsearchExceptio
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -45,7 +47,8 @@ public class RestControllerAdvice {
 			MissingServletRequestParameterException.class,
 			ECLException.class,
 			TransformationException.class,
-			HttpMessageNotReadableException.class
+			HttpMessageNotReadableException.class,
+			HandlerMethodValidationException.class
 	})
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	@ResponseBody
@@ -62,6 +65,11 @@ public class RestControllerAdvice {
 				ecl = request.getParameter("statedEcl");
 			}
 			logger.info("bad request {}, ECL:{}", exception.getMessage(), ecl);
+		} else if (exception instanceof HandlerMethodValidationException validationException) {
+			logger.info("bad request {}, HandlerMethodValidationException", exception.getMessage());
+			for (ParameterValidationResult validationResult : validationException.getAllValidationResults()) {
+				logger.info("Bad Request, Validation Result: {}", validationResult);
+			}
 		} else {
 			logger.info("bad request {}", exception.getMessage());
 		}
