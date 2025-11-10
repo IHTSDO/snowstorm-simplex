@@ -236,17 +236,17 @@ public class ConceptController {
 				Get the list of published concepts changed since a specific effect-time on a given branch.
 
 				Concept, description and relationship records are checked. Optionally filter component types checked.
-				Only concept codes are returned.
+				The set of all concept codes are returned.
 				"""
 				)
 	@GetMapping(value = "/{branch}/concepts/change-report", produces = {"application/json", "text/csv"})
 	public HttpEntity<ItemsPage<String>> findChangedConcepts(
 			@PathVariable String branch,
 
-			@Parameter(description = "Concept must have changed since effective time to match. Use 'changeTypes' to control what types of changes count.")
+			@Parameter(description = "Concept must have been created or changed after the effective time to match. Use 'changeTypes' to control what types of changes count.")
 			@RequestParam int changedSince,
 
-			@Parameter(description = "To be used in combination with 'changedSince'. The set of change types that count in the selection process.")
+			@Parameter(description = "To be used in combination with 'changedSince'. The set of change types that count in the selection process. Defaults to all change types.")
 			@RequestParam(required = false) Set<ConceptChangeType> changeTypes) {
 
 		branch = BranchPathUriUtil.decodePath(branch);
