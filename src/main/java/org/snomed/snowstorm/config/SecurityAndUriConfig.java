@@ -132,7 +132,9 @@ public class SecurityAndUriConfig {
 				"/mrcm/(.*)/concept-model-attribute-hierarchy",
 				"/admin/(.*)/actions/.*",
 				"/admin/permissions/(.*)/role/.*",
-				"/admin/permissions/(((?!user-group).)(.*))"
+				"/admin/permissions/(((?!user-group).)(.*))",
+				"/admin/versions/branch/(.*)/components/.*",
+				"/admin/versions/branch/(.*)"
 				));
 	}
 
