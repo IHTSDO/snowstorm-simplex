@@ -2,7 +2,6 @@ package org.snomed.snowstorm.core.data.services;
 
 import io.kaicode.elasticvc.domain.Branch;
 import io.kaicode.elasticvc.helper.SortBuilders;
-import org.ihtsdo.drools.domain.Component;
 import org.snomed.snowstorm.core.data.domain.SnomedComponent;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.annotations.Document;
