@@ -343,6 +343,10 @@ public class ExportService {
 			ZipOutputStream zipOutputStream, String codeSystemRF2Name, ReferenceSetType referenceSetType, Long refsetToExport, Query memberBranchCriteria,
 			List<Long> refsetsOfThisType) {
 
+		if (moduleIds == null) {
+			moduleIds = new HashSet<>();
+		}
+
 		if (!refsetOnlyExport || refsetIds.contains(refsetToExport.toString())) {
 			if (Concepts.MODULE_DEPENDENCY_REFERENCE_SET.equals(String.valueOf(refsetToExport))) {
 				moduleIds.addAll(sBranchService.getModules(branchPath));
