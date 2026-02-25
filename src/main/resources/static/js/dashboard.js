@@ -8,6 +8,8 @@ $(document).ready(function () {
     const $valuesetTableBody = $('#valueset-table tbody');
     const $conceptmapTableBody = $('#conceptmap-table tbody');
 
+    const AJAX_TIMEOUT_MS = 60000; // 1 minute
+
     // Handle browser back/forward buttons
     $(window).on('hashchange', function() {
         initializeFromHash();
@@ -94,18 +96,36 @@ $(document).ready(function () {
         loadConceptMaps();
     });
 
-    // Function to update resource count display
+    // Function to update resource count display (excludes loading rows)
     function updateResourceCount(tabType) {
         const countElement = $('#resource-count');
         if (tabType === 'codesystem') {
-            const count = $tableBody.find('tr').length;
-            countElement.text(`${count} CodeSystem(s) loaded`);
+            const totalRows = $tableBody.find('tr').length;
+            const loadingRows = $tableBody.find('tr[data-loading]').length;
+            if (loadingRows > 0 && totalRows === loadingRows) {
+                countElement.text('Loading CodeSystems...');
+            } else {
+                const count = totalRows - loadingRows;
+                countElement.text(`${count} CodeSystem(s) loaded`);
+            }
         } else if (tabType === 'valueset') {
-            const count = $valuesetTableBody.find('tr').length;
-            countElement.text(`${count} ValueSet(s) loaded`);
+            const totalRows = $valuesetTableBody.find('tr').length;
+            const loadingRows = $valuesetTableBody.find('tr[data-loading]').length;
+            if (loadingRows > 0 && totalRows === loadingRows) {
+                countElement.text('Loading ValueSets...');
+            } else {
+                const count = totalRows - loadingRows;
+                countElement.text(`${count} ValueSet(s) loaded`);
+            }
         } else if (tabType === 'conceptmap') {
-            const count = $conceptmapTableBody.find('tr').length;
-            countElement.text(`${count} ConceptMap(s) loaded`);
+            const totalRows = $conceptmapTableBody.find('tr').length;
+            const loadingRows = $conceptmapTableBody.find('tr[data-loading]').length;
+            if (loadingRows > 0 && totalRows === loadingRows) {
+                countElement.text('Loading ConceptMaps...');
+            } else {
+                const count = totalRows - loadingRows;
+                countElement.text(`${count} ConceptMap(s) loaded`);
+            }
         }
     }
 
@@ -119,7 +139,7 @@ $(document).ready(function () {
         
         // Show loading state
         $tableBody.append(`
-            <tr>
+            <tr data-loading>
                 <td colspan="6" class="text-center">
                     <div class="spinner-border spinner-border-sm" role="status">
                         <span class="visually-hidden">Loading...</span>
@@ -134,7 +154,7 @@ $(document).ready(function () {
             url: '/fhir/CodeSystem',
             method: 'GET',
             dataType: 'json',
-            timeout: 10000, // 10 second timeout
+            timeout: AJAX_TIMEOUT_MS,
             success: function(data) {
                 // Clear loading state
                 $tableBody.empty();
@@ -228,7 +248,7 @@ $(document).ready(function () {
         
         // Show loading state
         $valuesetTableBody.append(`
-            <tr>
+            <tr data-loading>
                 <td colspan="6" class="text-center">
                     <div class="spinner-border spinner-border-sm" role="status">
                         <span class="visually-hidden">Loading...</span>
@@ -243,7 +263,7 @@ $(document).ready(function () {
             url: '/fhir/ValueSet',
             method: 'GET',
             dataType: 'json',
-            timeout: 10000, // 10 second timeout
+            timeout: AJAX_TIMEOUT_MS,
             success: function(data) {
                 // Clear loading state
                 $valuesetTableBody.empty();
@@ -337,7 +357,7 @@ $(document).ready(function () {
         
         // Show loading state
         $conceptmapTableBody.append(`
-            <tr>
+            <tr data-loading>
                 <td colspan="6" class="text-center">
                     <div class="spinner-border spinner-border-sm" role="status">
                         <span class="visually-hidden">Loading...</span>
@@ -352,7 +372,7 @@ $(document).ready(function () {
             url: '/fhir/ConceptMap',
             method: 'GET',
             dataType: 'json',
-            timeout: 10000, // 10 second timeout
+            timeout: AJAX_TIMEOUT_MS,
             success: function(data) {
                 // Clear loading state
                 $conceptmapTableBody.empty();
@@ -518,7 +538,7 @@ $(document).ready(function () {
             url: `/fhir/CodeSystem/${id}`,
             method: 'GET',
             dataType: 'json',
-            timeout: 10000,
+            timeout: AJAX_TIMEOUT_MS,
             success: function(data) {
                 displayCodeSystemDetails(data);
             },
@@ -570,7 +590,7 @@ $(document).ready(function () {
             url: `/fhir/ValueSet/${id}`,
             method: 'GET',
             dataType: 'json',
-            timeout: 10000,
+            timeout: AJAX_TIMEOUT_MS,
             success: function(data) {
                 displayValueSetDetails(data);
             },
@@ -622,7 +642,7 @@ $(document).ready(function () {
             url: `/fhir/ConceptMap/${id}`,
             method: 'GET',
             dataType: 'json',
-            timeout: 10000,
+            timeout: AJAX_TIMEOUT_MS,
             success: function(data) {
                 displayConceptMapDetails(data);
             },
