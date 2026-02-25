@@ -38,3 +38,12 @@ body {
     flex-grow: 1;
     overflow: visible;
 }
+
+[x-cloak] {
+    display: none !important;
+}
+
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
