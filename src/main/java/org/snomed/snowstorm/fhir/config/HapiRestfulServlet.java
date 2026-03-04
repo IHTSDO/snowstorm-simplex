@@ -5,6 +5,7 @@ import ca.uhn.fhir.parser.LenientErrorHandler;
 import ca.uhn.fhir.parser.StrictErrorHandler;
 import ca.uhn.fhir.rest.api.EncodingEnum;
 import ca.uhn.fhir.rest.server.RestfulServer;
+import ca.uhn.fhir.rest.server.interceptor.CorsInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.snomed.snowstorm.fhir.exceptions.ElasticsearchExceptionInterceptor;
@@ -12,6 +13,7 @@ import org.snomed.snowstorm.fhir.services.*;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
+import org.springframework.web.cors.CorsConfiguration;
 
 public class HapiRestfulServlet extends RestfulServer {
 
