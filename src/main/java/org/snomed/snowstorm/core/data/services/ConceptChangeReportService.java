@@ -1,7 +1,7 @@
 package org.snomed.snowstorm.core.data.services;
 
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
-import co.elastic.clients.json.JsonData;
+import co.elastic.clients.elasticsearch._types.query_dsl.RangeQueryBuilders;
 import io.kaicode.elasticvc.api.BranchCriteria;
 import io.kaicode.elasticvc.api.VersionControlHelper;
 import io.kaicode.elasticvc.domain.DomainEntity;
@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Set;
 
 import static co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders.bool;
-import static co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders.range;
 import static io.kaicode.elasticvc.api.ComponentService.LARGE_PAGE;
 
 @Service
@@ -40,7 +39,7 @@ public class ConceptChangeReportService {
 		Set<Long> conceptIds = new LongOpenHashSet();
 
 		BranchCriteria branchCriteria = versionControlHelper.getBranchCriteria(branch);
-		Query effectiveTimeGreaterThan = range().field(SnomedComponent.Fields.EFFECTIVE_TIME).gt(JsonData.of(changedSince)).build()._toQuery();
+		Query effectiveTimeGreaterThan = RangeQueryBuilders.number().field(SnomedComponent.Fields.EFFECTIVE_TIME).gt((double) changedSince).build()._toRangeQuery()._toQuery();
 
 		if (changeTypes.isEmpty() || changeTypes.contains(ConceptChangeType.CONCEPT)) {
 			gatherConceptIds(Concept.class, Concept.Fields.CONCEPT_ID,
@@ -67,7 +66,7 @@ public class ConceptChangeReportService {
 				.withQuery(bool(b -> b
 						.must(effectiveTimeGreaterThan)
 						.must(branchCriteria.getEntityBranchCriteria(entityClass))))
-				.withSourceFilter(new FetchSourceFilter(new String[]{conceptIdField}, null))
+				.withSourceFilter(new FetchSourceFilter(true, new String[]{conceptIdField}, null))
 				.withPageable(LARGE_PAGE);
 		try (SearchHitsIterator<T> conceptStream = elasticsearchOperations.searchForStream(builder.build(), entityClass)) {
 			conceptStream.forEachRemaining(entity -> conceptIds.add(extractor.get(entity.getContent())));
