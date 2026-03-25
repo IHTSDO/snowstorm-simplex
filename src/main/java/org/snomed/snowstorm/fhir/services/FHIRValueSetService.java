@@ -291,7 +291,7 @@ public class FHIRValueSetService implements FHIRConstants {
 		} else {
 			// FHIR Concept Expansion (non-SNOMED)
 			String sortField = filter != null ? "displayLen" : CODE;
-			pageRequest = PageRequest.of(pageRequest.getPageNumber(), pageRequest.getPageSize(), Sort.Direction.ASC, sortField);
+			pageRequest = getPageRequest(pageRequest, sortField);
 			BoolQuery fhirConceptQuery = vsFinderService.getFhirConceptQuery(codeSelectionCriteria, filter).build();
 
 			int offsetRequested = (int) pageRequest.getOffset();
