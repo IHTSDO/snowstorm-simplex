@@ -5,8 +5,13 @@
 	<name>Snowstorm Simplex Fork</name>
 	<description>SNOMED CT Terminology Server Using Elasticsearch</description>
 
+<<<<<<< HEAD
 	<artifactId>snowstorm-simplex</artifactId>
 	<version>10.12.0</version>
+=======
+	<artifactId>snowstorm</artifactId>
+	<version>10.13.0-SNAPSHOT</version>
+>>>>>>> 4ce6bc9b8 (Start 10.13.0-SNAPSHOT)
 	<parent>
 		<groupId>org.snomed</groupId>
 		<artifactId>snomed-parent-bom</artifactId>
