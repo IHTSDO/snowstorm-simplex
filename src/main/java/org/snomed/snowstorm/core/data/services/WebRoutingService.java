@@ -17,6 +17,9 @@ import java.util.*;
 public class WebRoutingService {
 
 	public static final String DAILYBUILD_NAMESPACE = "xsct";
+	public static final String BRANCH = "{BRANCH}";
+	public static final String SCTID = "{SCTID}";
+	public static final String VERSION_URI = "{VERSION_URI}";
 	public static String CANONICAL_URI_PREFIX = "http://snomed.info/";
 	
 	@Value("${uri.dereferencing.prefix}")
@@ -64,23 +67,23 @@ public class WebRoutingService {
 		}
 
 		String template = webRoute.getRedirectionTemplate();
-		if (template.contains("{BRANCH}")) {
+		if (template.contains(BRANCH)) {
 			if (concept == null) {
 				throw new IllegalArgumentException("URI Redirection needed to find a BRANCH, but no concept was found");
 			}
 
-			if (Boolean.TRUE.equals(versionConceptFound.getValue())) {
-				template = template.replace("{BRANCH}", version.getBranchPath());
+			if (Boolean.TRUE.equals(versionConceptFound.get())) {
+				template = template.replace(BRANCH, version.getBranchPath());
 			} else {
-				template = template.replace("{BRANCH}", concept.getPath());
+				template = template.replace(BRANCH, concept.getPath());
 			}
 		}
 		
-		if (template.contains("{SCTID}")) {
-			template = template.replace("{SCTID}", uriParts.sctId);
+		if (template.contains(SCTID)) {
+			template = template.replace(SCTID, uriParts.sctId);
 		}
 		
-		if (template.contains("{VERSION_URI}")) {
+		if (template.contains(VERSION_URI)) {
 			String versionUri = CANONICAL_URI_PREFIX + "sct/";
 			if (uriParts.moduleId != null) {
 				versionUri += uriParts.moduleId;
@@ -92,7 +95,7 @@ public class WebRoutingService {
 			if (uriParts.effectiveDate != null) {
 				versionUri += "/version/" + uriParts.effectiveDate;
 			}
-			template = template.replace("{VERSION_URI}", versionUri);
+			template = template.replace(VERSION_URI, versionUri);
 		}
 		return template;
 	}
