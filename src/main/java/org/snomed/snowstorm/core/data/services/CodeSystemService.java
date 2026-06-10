@@ -406,6 +406,7 @@ public class CodeSystemService {
 			copy.setDefaultLanguageReferenceSets(stored.getDefaultLanguageReferenceSets() == null ? null : stored.getDefaultLanguageReferenceSets().clone());
 			copy.setDailyBuildAvailable(stored.isDailyBuildAvailable());
 			copy.setLatestDailyBuild(stored.getLatestDailyBuild());
+			copy.setUriModuleId(stored.getUriModuleId());
 			copies.add(copy);
 		}
 		return copies;
