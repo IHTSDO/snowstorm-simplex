@@ -220,7 +220,7 @@ public abstract class Config extends ElasticsearchConfig {
 	}
 	
 	private String secondsDuration(Date timepoint) {
-		return "" + (float) (new Date().getTime() - timepoint.getTime()) / 1000f;
+		return "" + (new Date().getTime() - timepoint.getTime()) / 1000f;
 	}
 
 	@Bean

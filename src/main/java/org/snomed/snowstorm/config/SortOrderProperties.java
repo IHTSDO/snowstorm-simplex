@@ -5,7 +5,7 @@ import java.util.Map;
 
 public class SortOrderProperties {
 
-	private Map<String, String> attribute = new HashMap<>();
+	private final Map<String, String> attribute = new HashMap<>();
 	private Map<String, Map<Long, Short>> domainAttributeOrderMap;
 
 	public Map<String, String> getAttribute() {
@@ -17,11 +17,11 @@ public class SortOrderProperties {
 			synchronized (this) {
 				domainAttributeOrderMap = new HashMap<>();
 				try {
-					for (String key : attribute.keySet()) {
-						String[] parts = key.split("\\.");
+					for (Map.Entry<String, String> entry : attribute.entrySet()) {
+						String[] parts = entry.getKey().split("\\.");
 						String semanticTag = parts[0];
 						Long attributeId = Long.parseLong(parts[1]);
-						short order = Short.parseShort(attribute.get(key));
+						short order = Short.parseShort(entry.getValue());
 						domainAttributeOrderMap.computeIfAbsent(semanticTag, id -> new HashMap<>())
 								.put(attributeId, order);
 					}

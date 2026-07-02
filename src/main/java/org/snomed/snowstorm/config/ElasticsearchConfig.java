@@ -63,7 +63,7 @@ public class ElasticsearchConfig extends ElasticsearchConfiguration {
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	@PostConstruct
-	public void init() throws IOException {
+	public void init() {
 		initialiseIndices(false);
 	}
 
