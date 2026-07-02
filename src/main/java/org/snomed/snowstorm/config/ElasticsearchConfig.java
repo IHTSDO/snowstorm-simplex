@@ -29,7 +29,6 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.signer.Aws4Signer;
 import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
 
-import java.io.IOException;
 import java.util.*;
 
 public class ElasticsearchConfig extends ElasticsearchConfiguration {
