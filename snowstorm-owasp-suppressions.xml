@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+	<suppress>
+		<notes>
+			JGit 6.10.1.202505221210-r and 7.2.1.202505142326-r include the CVE-2025-4949 fix.
+			Dependency-check CPE matching does not handle Eclipse qualifier versions correctly.
+		</notes>
+		<packageUrl regex="true">^pkg:maven/org\.eclipse\.jgit/org\.eclipse\.jgit@(6\.10\.1\.202505221210-r|7\.2\.1\.202505142326-r)$</packageUrl>
+		<cve>CVE-2025-4949</cve>
+	</suppress>
+	<suppress until="2026-10-01">
+		<notes>
+			CVE-2026-54515 is fixed in jackson-databind 2.18.9 / 2.21.5 / 2.22.1, but those patch releases are not yet on Maven Central.
+		</notes>
+		<packageUrl regex="true">^pkg:maven/com\.fasterxml\.jackson\.core/jackson-databind@.*$</packageUrl>
+		<cve>CVE-2026-54515</cve>
+	</suppress>
+</suppressions>

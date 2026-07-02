@@ -27,7 +27,12 @@
 
 		<!-- BOM Overrides -->
 		<commons-io.version>2.21.0</commons-io.version>
-		<activemq.version>6.2.1</activemq.version>
+		<activemq.version>6.2.7</activemq.version>
+		<commons-lang3.version>3.18.0</commons-lang3.version>
+		<elasticsearch.version>8.19.18</elasticsearch.version>
+		<spring-cloud.version>2025.0.3</spring-cloud.version>
+		<spring-cloud-starter-consul.version>4.3.3</spring-cloud-starter-consul.version>
+		<spring-cloud-starter-vault.version>4.3.3</spring-cloud-starter-vault.version>
 
 		<!--
 		Current Elasticsearch _Server_ version is 8.11.1
@@ -357,6 +362,56 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<dependency>
+				<groupId>org.webjars</groupId>
+				<artifactId>swagger-ui</artifactId>
+				<version>5.32.8</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-lang3</artifactId>
+				<version>${commons-lang3.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>co.elastic.clients</groupId>
+				<artifactId>elasticsearch-java</artifactId>
+				<version>${elasticsearch.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.elasticsearch.client</groupId>
+				<artifactId>elasticsearch-rest-client</artifactId>
+				<version>${elasticsearch.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.elasticsearch.client</groupId>
+				<artifactId>elasticsearch-rest-client-sniffer</artifactId>
+				<version>${elasticsearch.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.httpcomponents</groupId>
+				<artifactId>httpclient</artifactId>
+				<version>4.5.14</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.httpcomponents</groupId>
+				<artifactId>httpclient-cache</artifactId>
+				<version>4.5.14</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.httpcomponents</groupId>
+				<artifactId>httpcore</artifactId>
+				<version>4.4.16</version>
+			</dependency>
+			<dependency>
+				<groupId>tools.jackson.core</groupId>
+				<artifactId>jackson-core</artifactId>
+				<version>3.1.4</version>
+			</dependency>
+			<dependency>
+				<groupId>tools.jackson.core</groupId>
+				<artifactId>jackson-databind</artifactId>
+				<version>3.1.4</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 	<build>
@@ -486,6 +541,16 @@
 						</goals>
 					</execution>
 				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.owasp</groupId>
+				<artifactId>dependency-check-maven</artifactId>
+				<configuration>
+					<suppressionFiles>
+						<suppressionFile>owasp-suppressions.xml</suppressionFile>
+						<suppressionFile>${project.basedir}/snowstorm-owasp-suppressions.xml</suppressionFile>
+					</suppressionFiles>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>
