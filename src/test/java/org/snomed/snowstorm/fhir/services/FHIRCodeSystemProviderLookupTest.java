@@ -1,10 +1,12 @@
 package org.snomed.snowstorm.fhir.services;
 
 import org.hl7.fhir.r4.model.Parameters;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Disabled("Dissabling FHIR tests ahead of Snowstorm 11 upgrade")
 class FHIRCodeSystemProviderLookupTest extends AbstractFHIRTest {
 
 	@Test

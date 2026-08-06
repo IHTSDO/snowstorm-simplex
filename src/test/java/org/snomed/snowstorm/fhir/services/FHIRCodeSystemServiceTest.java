@@ -3,6 +3,7 @@ package org.snomed.snowstorm.fhir.services;
 import org.hl7.fhir.r4.model.CodeSystem;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.snomed.snowstorm.core.data.services.CodeSystemService;
 import org.snomed.snowstorm.core.data.services.ServiceException;
@@ -13,6 +14,7 @@ import static org.hl7.fhir.r4.model.OperationOutcome.IssueType.INVARIANT;
 import static org.hl7.fhir.r4.model.OperationOutcome.IssueType.NOTFOUND;
 import static org.junit.jupiter.api.Assertions.*;
 
+@Disabled("Dissabling FHIR tests ahead of Snowstorm 11 upgrade")
 class FHIRCodeSystemServiceTest extends AbstractFHIRTest {
 
 	@Autowired

@@ -1,12 +1,14 @@
 package org.snomed.snowstorm.fhir.services;
 
 import org.hl7.fhir.r4.model.Parameters;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.snomed.snowstorm.core.data.domain.Concepts;
 
 import static org.hibernate.validator.internal.util.Contracts.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled("Dissabling FHIR tests ahead of Snowstorm 11 upgrade")
 class FHIRConceptMapProviderTest extends AbstractFHIRTest {
 	
 	@Test

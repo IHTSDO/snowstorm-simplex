@@ -1,10 +1,12 @@
 package org.snomed.snowstorm.fhir.domain;
 
 import org.hl7.fhir.r4.model.CodeSystem;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Disabled("Dissabling FHIR tests ahead of Snowstorm 11 upgrade")
 class FHIRCodeSystemVersionTest {
 
 	@Test

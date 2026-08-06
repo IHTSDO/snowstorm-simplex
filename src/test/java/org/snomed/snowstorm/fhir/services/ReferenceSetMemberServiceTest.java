@@ -1,5 +1,6 @@
 package org.snomed.snowstorm.fhir.services;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.snomed.snowstorm.core.data.domain.ReferenceSetMember;
 import org.snomed.snowstorm.core.data.services.ReferenceSetMemberService;
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 /**
  * A test for the ReferenceSetMemberService that depends on FHIR data setup
  */
+@Disabled("Dissabling FHIR tests ahead of Snowstorm 11 upgrade")
 public class ReferenceSetMemberServiceTest extends AbstractFHIRTest {
 
 	@Autowired

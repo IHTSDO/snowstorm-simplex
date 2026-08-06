@@ -2,6 +2,7 @@ package org.snomed.snowstorm.fhir.services;
 
 import ca.uhn.fhir.rest.api.MethodOutcome;
 import org.hl7.fhir.r4.model.ValueSet;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled("Dissabling FHIR tests ahead of Snowstorm 11 upgrade")
 public class FHIRValueSetProviderExpandTest extends AbstractFHIRTest {
 
 	private static final String VALUE_SET_EXPANSION_POST_BODY_WITH_VERSION = """

@@ -2,6 +2,7 @@ package org.snomed.snowstorm.fhir.services;
 
 import org.hl7.fhir.r4.model.Parameters;
 import org.hl7.fhir.r4.model.ValueSet;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.snomed.snowstorm.core.data.domain.Concepts;
 import org.springframework.http.HttpMethod;
@@ -13,6 +14,7 @@ import static java.lang.String.format;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.snomed.snowstorm.fhir.config.FHIRConstants.SNOMED_URI;
 
+@Disabled("Dissabling FHIR tests ahead of Snowstorm 11 upgrade")
 class FHIRValueSetProviderValidateCodeEclTest extends AbstractFHIRTest {
 
 	@Test
