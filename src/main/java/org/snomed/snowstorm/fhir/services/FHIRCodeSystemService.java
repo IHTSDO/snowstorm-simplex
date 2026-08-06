@@ -129,13 +129,8 @@ public class FHIRCodeSystemService {
 			newCodeSystem.setBranchPath(String.join("/", dependentCodeSystem.getBranchPath(), newCodeSystem.getShortName()));
 			newCodeSystem.setUriModuleId(snomedModule);
 			org.snomed.snowstorm.core.data.domain.CodeSystem savedCodeSystem = snomedCodeSystemService.createCodeSystem(newCodeSystem);
-<<<<<<< HEAD
-			return new FHIRCodeSystemVersion(savedCodeSystem, false);
-		} else {
-=======
 			return new FHIRCodeSystemVersion(savedCodeSystem, true);
 		} else {// Not Supplement
->>>>>>> 5acd63dcd (ISTO-134 Fix FHIR Tests after rebase, including switching cis config to use local-sequential by default)
 			// Check not SNOMED id
 			if (fhirCodeSystemVersion.getId().startsWith(SCT_ID_PREFIX)) {
 				throw exception(format("Code System id prefix '%s' is reserved for SNOMED CT code systems. " +
