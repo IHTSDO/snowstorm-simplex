@@ -8,6 +8,7 @@ import org.hl7.fhir.r4.model.CodeSystem;
 import org.hl7.fhir.r4.model.*;
 import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.OperationOutcome.IssueType;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.snomed.snowstorm.core.data.domain.*;
@@ -18,15 +19,11 @@ import org.snomed.snowstorm.fhir.domain.FHIRCodeSystemVersion;
 import org.snomed.snowstorm.fhir.pojo.CanonicalUri;
 import org.snomed.snowstorm.fhir.pojo.FHIRCodeSystemVersionParams;
 import org.snomed.snowstorm.rest.ControllerHelper;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,21 +33,26 @@ import static org.snomed.snowstorm.config.Config.DEFAULT_LANGUAGE_DIALECTS;
 @Component
 public class FHIRHelper implements FHIRConstants {
 
-	private static final Pattern SNOMED_URI_MODULE_PATTERN = Pattern.compile("http://snomed.info/x?sct/(\\d+)");
-	private static final Pattern SNOMED_URI_MODULE_AND_VERSION_PATTERN = Pattern.compile("http://snomed.info/x?sct/(\\d+)/version/([\\d]{8})");
-	private static final Pattern SCT_ID_PATTERN = Pattern.compile("sct_(\\d)+_(\\d){8}");
+	public static final Pattern SNOMED_URI_MODULE_PATTERN = Pattern.compile("http://snomed.info/x?sct/(\\d+)");
+	public static final Pattern SNOMED_URI_MODULE_AND_VERSION_PATTERN = Pattern.compile("http://snomed.info/x?sct/(\\d+)/version/([\\d]{8})");
+	public static final int DEFAULT_PAGESIZE = 1_000;
+	public static final int MAXIMUM_PAGESIZE = 100_000;
+	public static final String DEFAULT_VERSION = "1";
 
 	private static final Pattern SCT_ID_PATTERN = Pattern.compile("sct_(\\d)+_(\\d){8}");
 
-	@Autowired
-	private DialectConfigurationService dialectService;
+	private final DialectConfigurationService dialectService;
 
 	private FhirContext fhirContext;
 
 	public static final Sort MEMBER_SORT = Sort.sort(ReferenceSetMember.class).by(ReferenceSetMember::getMemberId).descending();
 
 	private static final Logger logger = LoggerFactory.getLogger(FHIRHelper.class);
-	
+
+	public FHIRHelper(DialectConfigurationService dialectService) {
+		this.dialectService = dialectService;
+	}
+
 	public static boolean isSnomedUri(String uri) {
 		return uri != null && (uri.startsWith(SNOMED_URI) || uri.startsWith(SNOMED_URI_UNVERSIONED));
 	}
@@ -69,12 +71,16 @@ public class FHIRHelper implements FHIRConstants {
 	}
 
 	public static SnowstormFHIRServerResponseException exception(String message, IssueType issueType, int theStatusCode, Throwable e) {
-		OperationOutcome outcome = new OperationOutcome();
-		OperationOutcome.OperationOutcomeIssueComponent component = new OperationOutcome.OperationOutcomeIssueComponent();
-		component.setSeverity(OperationOutcome.IssueSeverity.ERROR);
-		component.setCode(issueType);
-		component.setDiagnostics(message);
-		outcome.addIssue(component);
+		return exception(message, issueType,theStatusCode, e, null);
+	}
+
+	public static SnowstormFHIRServerResponseException exception(String message, IssueType issueType, int theStatusCode, Throwable e, CodeableConcept detail) {
+		OperationOutcome outcome = createOperationOutcomeWithIssue(detail, OperationOutcome.IssueSeverity.ERROR,null, issueType,null, message);
+		return new SnowstormFHIRServerResponseException(theStatusCode, message, outcome, e);
+	}
+
+	public static SnowstormFHIRServerResponseException exception(String message, IssueType issueType, int theStatusCode, Throwable e, CodeableConcept detail, List<Extension> extensions) {
+		OperationOutcome outcome = createOperationOutcomeWithIssue(detail, OperationOutcome.IssueSeverity.ERROR, null, issueType, extensions, message);
 		return new SnowstormFHIRServerResponseException(theStatusCode, message, outcome, e);
 	}
 
@@ -82,12 +88,20 @@ public class FHIRHelper implements FHIRConstants {
 		return parametersParameterComponents.stream()
 				.filter(parametersParameterComponent -> parametersParameterComponent.getName().equals(name))
 				.findFirst()
-				.map(param -> param.getValue().toString()).orElse(null);
+				.map(param -> {
+					if (param.getValue() instanceof UrlType urlType){
+						return urlType.asStringValue();
+					} else if (param.getValue() instanceof UriType uriType) {
+						return uriType.asStringValue();
+					} else {
+						return param.getValue().toString();
+					}
+				}).orElse(null);
 	}
 
 	public static CanonicalUri findParameterCanonicalOrNull(final List<Parameters.ParametersParameterComponent> parametersParameterComponents, final String name) {
 		return parametersParameterComponents.stream().filter(parametersParameterComponent -> parametersParameterComponent.getName().equals(name)).findFirst()
-				.map(Objects::toString).map(CanonicalUri::fromString).orElse(null);
+				.map(p-> p.getValue().primitiveValue()).map(CanonicalUri::fromString).orElse(null);
 	}
 
 	public static Boolean findParameterBooleanOrNull(List<Parameters.ParametersParameterComponent> parametersParameterComponents, String name) {
@@ -102,8 +116,12 @@ public class FHIRHelper implements FHIRConstants {
 
 	@SuppressWarnings("unchecked")
 	public static List<String> findParameterStringListOrNull(List<Parameters.ParametersParameterComponent> parametersParameterComponents, String name) {
-		return parametersParameterComponents.stream().filter(parametersParameterComponent -> parametersParameterComponent.getName().equals(name)).findFirst()
-				.map(param -> (List<String>) param.getValue()).orElse(null);
+		List<String> result =  parametersParameterComponents.stream().filter(parametersParameterComponent -> parametersParameterComponent.getName().equals(name)).map(parametersParameterComponent -> parametersParameterComponent.getValue().primitiveValue()).toList();
+		if (result.isEmpty()){
+			return Collections.emptyList();
+		} else {
+			return result;
+		}
 	}
 
 	public static String getDisplayLanguage(String displayLanguageParam, String acceptHeader) {
@@ -113,7 +131,7 @@ public class FHIRHelper implements FHIRConstants {
 		if (acceptHeader != null) {
 			return acceptHeader;
 		}
-		return "en";
+		return null;
 	}
 
 	public static void parameterNamingHint(String incorrectParamName, Object incorrectParamValue, String correctParamName) {
@@ -128,10 +146,119 @@ public class FHIRHelper implements FHIRConstants {
 	}
 
 	public static void readOnlyCheck(boolean readOnlyMode) {
+		readOnlyCheck(readOnlyMode, null);
+	}
+
+	public static void readOnlyCheck(boolean readOnlyMode, String attemptedAction) {
 		if (readOnlyMode) {
-			logger.info("Write operation not permitted, the server is in read-only mode.");
-			throw exception("Write operation not permitted.", IssueType.FORBIDDEN, 401);
+			String msg = "Write operation not permitted";
+			if (attemptedAction != null) {
+				msg += ", while attempting to " + attemptedAction + ".";
+			}
+			msg += " The server is in read-only mode.";
+			logger.info(msg);
+			throw exception(msg, IssueType.FORBIDDEN, 401);
 		}
+	}
+
+	public static boolean isPostcoordinatedSnomed(String code, FHIRCodeSystemVersionParams codeSystemParams) {
+		if (codeSystemParams.isSnomed() && code != null) {
+			return code.startsWith("===") || code.startsWith("<<<") || code.contains("+") || code.contains(":");
+		}
+		return false;
+	}
+
+	static Parameters.@NotNull ParametersParameterComponent createParameterComponentWithOperationOutcomeWithIssues( List<OperationOutcome.OperationOutcomeIssueComponent> issues) {
+		OperationOutcome operationOutcome = createOperationOutcomeWithIssues(issues);
+		Parameters.ParametersParameterComponent operationOutcomeParameter = new Parameters.ParametersParameterComponent(new StringType("issues"));
+		operationOutcomeParameter.setResource(operationOutcome);
+		return operationOutcomeParameter;
+	}
+
+	static Parameters.@NotNull ParametersParameterComponent createParameterComponentWithOperationOutcomeWithIssue(CodeableConcept cc, OperationOutcome.IssueSeverity issueSeverity, String locationExpression, IssueType issueType) {
+		OperationOutcome operationOutcome = createOperationOutcomeWithIssue(cc, issueSeverity, locationExpression, issueType,null, null);
+		Parameters.ParametersParameterComponent operationOutcomeParameter = new Parameters.ParametersParameterComponent(new StringType("issues"));
+		operationOutcomeParameter.setResource(operationOutcome);
+		return operationOutcomeParameter;
+	}
+
+	public static @NotNull OperationOutcome createOperationOutcomeWithIssue(CodeableConcept cc, OperationOutcome.IssueSeverity issueSeverity, String locationExpression, IssueType issueType, List<Extension> extensions, String diagnostics) {
+		OperationOutcome operationOutcome = new OperationOutcome();
+		OperationOutcome.OperationOutcomeIssueComponent issue = new OperationOutcome.OperationOutcomeIssueComponent();
+		issue.setSeverity(issueSeverity)
+				.setCode(issueType)
+				.setDetails(cc);
+		if (locationExpression != null){
+			issue.setLocation(Collections.singletonList(new StringType(locationExpression)))
+					.setExpression(Collections.singletonList(new StringType(locationExpression)));
+		}
+		issue.setDiagnostics(diagnostics);
+		issue.setExtension(extensions);
+		operationOutcome.addIssue(issue);
+		return operationOutcome;
+	}
+
+	public static @NotNull OperationOutcome createOperationOutcomeWithIssues(List<OperationOutcome.OperationOutcomeIssueComponent> issues) {
+		OperationOutcome operationOutcome = new OperationOutcome();
+		operationOutcome.setIssue(issues);
+		return operationOutcome;
+	}
+
+	public static OperationOutcome.@NotNull OperationOutcomeIssueComponent createOperationOutcomeIssueComponent(CodeableConcept cc, OperationOutcome.IssueSeverity issueSeverity, String locationExpression, IssueType issueType, List<Extension> extensions, String diagnostics) {
+		OperationOutcome.OperationOutcomeIssueComponent issue = new OperationOutcome.OperationOutcomeIssueComponent();
+		issue.setSeverity(issueSeverity)
+				.setCode(issueType)
+				.setDetails(cc);
+		if (locationExpression != null){
+			issue.setLocation(Collections.singletonList(new StringType(locationExpression)))
+					.setExpression(Collections.singletonList(new StringType(locationExpression)));
+		}
+		issue.setDiagnostics(diagnostics);
+		issue.setExtension(extensions);
+		return issue;
+	}
+
+	/**
+	 * Extracts inline tx-resource parameters into a request-scoped in-memory overlay map keyed by
+	 * canonical URL. In practice tx-resources are always CodeSystem or ValueSet (the two CanonicalResource
+	 * types a terminology server consumes). Resources of other types or without a URL are skipped.
+	 * When the same URL appears more than once the last occurrence wins. The returned map is unmodifiable.
+	 */
+	public static Map<String, Resource> extractTxResources(List<Parameters.ParametersParameterComponent> parsed) {
+		Map<String, Resource> overlay = new LinkedHashMap<>();
+		for (Parameters.ParametersParameterComponent param : FHIRValueSetProviderHelper.findParametersByName(parsed, "tx-resource")) {
+			Resource resource = param.getResource();
+			String key = txResourceOverlayKey(resource);
+			if (key != null) {
+				overlay.put(key, resource);
+			}
+		}
+		return Collections.unmodifiableMap(overlay);
+	}
+
+	private static String txResourceOverlayKey(Resource resource) {
+		String url = null;
+		String version = null;
+		if (resource instanceof CodeSystem cs) {
+			url = cs.getUrl();
+			version = cs.hasVersion() ? cs.getVersion() : null;
+		} else if (resource instanceof ValueSet vs) {
+			url = vs.getUrl();
+			version = vs.hasVersion() ? vs.getVersion() : null;
+		}
+		if (url == null || url.isBlank()) {
+			return null;
+		}
+		// Key by url|version so same-URL resources at different versions coexist.
+		// Unversioned resources are stored under the plain URL.
+		return version != null ? url + "|" + version : url;
+	}
+
+
+	static @NotNull String createFullyQualifiedCodeString(Coding codingA) {
+		return Optional.ofNullable(codingA.getSystem()).orElse("")
+				+ Optional.ofNullable(codingA.getVersion()).map(version -> "|" + version).orElse("")
+				+ "#" + codingA.getCode();
 	}
 
 	public List<LanguageDialect> getLanguageDialects(List<String> designations, String acceptLanguageHeader) {
@@ -139,25 +266,7 @@ public class FHIRHelper implements FHIRConstants {
 		final List<LanguageDialect> languageDialects = new ArrayList<>();
 		if (designations != null) {
 			for (String designation : designations) {
-				if (designation.length() > MAX_LANGUAGE_CODE_LENGTH) {
-					//in this case we're expecting a designation token
-					//of the form snomed PIPE langrefsetId
-					String[] tokenParts = designation.split(PIPE);
-					if (tokenParts.length < 2 ||
-							!StringUtils.isNumeric(tokenParts[1]) ||
-							// check for SNOMED URI, possibly an extension URI
-							// TODO: version support?
-							!tokenParts[0].matches(SNOMED_URI + "(/\\d*)?")) {
-						throw exception("Malformed designation token '" + designation + "' expected format http://snomed.info/sct(/moduleId) " +
-								"PIPE langrefsetId.", IssueType.VALUE, 400);
-					}
-					LanguageDialect languageDialect = new LanguageDialect(null, Long.parseLong(tokenParts[1]));
-					if (!languageDialects.contains(languageDialect)) {
-						languageDialects.add(languageDialect);
-					}
-				} else {
-					languageDialects.add(dialectService.getLanguageDialect(designation));
-				}
+				addLanguageDialectForDesignation(languageDialects, designation);
 			}
 		} else {
 			if (acceptLanguageHeader != null) {
@@ -170,24 +279,46 @@ public class FHIRHelper implements FHIRConstants {
 		return languageDialects;
 	}
 
+	private void addLanguageDialectForDesignation(List<LanguageDialect> languageDialects, String designation) {
+		if (designation.length() > MAX_LANGUAGE_CODE_LENGTH) {
+			//in this case we're expecting a designation token
+			//of the form snomed PIPE langrefsetId
+			String[] tokenParts = designation.split(PIPE);
+			if (tokenParts.length < 2 ||
+					!StringUtils.isNumeric(tokenParts[1]) ||
+					// check for SNOMED URI, possibly an extension URI
+					// TODO: version support?
+					!tokenParts[0].matches(SNOMED_URI + "(/\\d*)?")) {
+				throw exception("Malformed designation token '" + designation + "' expected format http://snomed.info/sct(/moduleId) " +
+						"PIPE langrefsetId.", IssueType.VALUE, 400);
+			}
+			LanguageDialect languageDialect = new LanguageDialect(null, Long.parseLong(tokenParts[1]));
+			if (!languageDialects.contains(languageDialect)) {
+				languageDialects.add(languageDialect);
+			}
+		} else {
+			languageDialects.add(dialectService.getLanguageDialect(designation));
+		}
+	}
+
 	public void setLanguageOptions(List<LanguageDialect> designations, String displayLanguageStr, String acceptLanguageHeader) {
 		setLanguageOptions(designations, null, displayLanguageStr, acceptLanguageHeader);
 	}
-	
+
 	public String getPreferredTerm(Concept concept, List<LanguageDialect> designations) {
 		if (designations == null || designations.isEmpty()) {
 			return concept.getPt().getTerm();
 		}
-		
+
 		for (Description d : concept.getDescriptions()) {
-			if (d.hasAcceptability(Concepts.PREFERRED, designations.get(0)) &&
+			if (d.hasAcceptability(Concepts.PREFERRED, designations.getFirst()) &&
 					d.getTypeId().equals(Concepts.SYNONYM)) {
 				return d.getTerm();
 			}
 		}
 		return null;
 	}
-	
+
 	public void setLanguageOptions(List<LanguageDialect> designations,
 			List<String> designationsStr,
 			String displayLanguageStr,
@@ -200,7 +331,7 @@ public class FHIRHelper implements FHIRConstants {
 			LanguageDialect displayDialect = dialectService.getLanguageDialect(displayLanguageStr);
 			//Ensure the display language is first in our list
 			designations.remove(displayDialect);
-			designations.add(0, displayDialect);
+			designations.addFirst(displayDialect);
 		}
 	}
 
@@ -245,7 +376,7 @@ public class FHIRHelper implements FHIRConstants {
 					param1Name, param2Name, param3Name), IssueType.INVARIANT, 400);
 		}
 	}
-	
+
 	public static void required(String param1Name, Object param1) {
 		if (param1 == null) {
 			throw exception(format("Parameter '%s' must be supplied.", param1Name), IssueType.INVARIANT, 400);
@@ -301,13 +432,32 @@ public class FHIRHelper implements FHIRConstants {
 	}
 
 	public static FHIRCodeSystemVersionParams getCodeSystemVersionParams(String systemId, String codeSystemParam, String versionParam, Coding coding) {
+		validateSystemAndCodingConsistency(codeSystemParam, versionParam, coding);
+
+		String codeSystemUrl = resolveCodeSystemUrl(codeSystemParam, coding, systemId);
+		String version = resolveVersion(versionParam, coding);
+
+		FHIRCodeSystemVersionParams codeSystemParams = new FHIRCodeSystemVersionParams(codeSystemUrl);
+		if (version != null) {
+			applyVersion(codeSystemParams, version);
+		}
+		if (systemId != null) {
+			applySystemId(codeSystemParams, systemId);
+		}
+
+		return codeSystemParams;
+	}
+
+	private static void validateSystemAndCodingConsistency(String codeSystemParam, String versionParam, Coding coding) {
 		if (codeSystemParam != null && coding != null && coding.getSystem() != null && !codeSystemParam.equals(coding.getSystem())) {
 			throw exception("Code system defined in system and coding do not match.", IssueType.INVARIANT, 400);
 		}
 		if (versionParam != null && coding != null && coding.getVersion() != null && !versionParam.equals(coding.getVersion())) {
 			throw exception("Version defined in version and coding do not match.", IssueType.INVARIANT, 400);
 		}
+	}
 
+	private static String resolveCodeSystemUrl(String codeSystemParam, Coding coding, String systemId) {
 		String codeSystemUrl = null;
 		if (codeSystemParam != null) {
 			codeSystemUrl = codeSystemParam;
@@ -317,70 +467,81 @@ public class FHIRHelper implements FHIRConstants {
 		if (codeSystemUrl == null && systemId == null) {
 			throw exception("Code system not defined in any parameter.", IssueType.INVARIANT, 400);
 		}
+		return codeSystemUrl;
+	}
 
-		String version = null;
+	private static String resolveVersion(String versionParam, Coding coding) {
 		if (versionParam != null) {
-			version = versionParam;
-		} else if (coding != null) {
-			version = coding.getVersion();
+			return versionParam;
 		}
+		if (coding != null) {
+			return coding.getVersion();
+		}
+		return null;
+	}
 
-		FHIRCodeSystemVersionParams codeSystemParams = new FHIRCodeSystemVersionParams(codeSystemUrl);
-		if (version != null) {
-			if ("*".equals(version)) {
-				throw FHIRHelper.exception("Version '*' is not supported.", OperationOutcome.IssueType.NOTSUPPORTED, 400);
-			}
-			if (codeSystemParams.isSnomed()) {
-				// Parse module and version from snomed version URI
-				// Either "http://snomed.info/sct/[sctid]" or "http://snomed.info/sct/[sctid]/version/[YYYYMMDD]"
-				String versionWithoutParams = version.contains("?") ? version.substring(0, version.indexOf("?")) : version;
-				Matcher matcher = SNOMED_URI_MODULE_PATTERN.matcher(versionWithoutParams);
-				if (matcher.matches()) {
-					codeSystemParams.setSnomedModule(matcher.group(1));
-				} else {
-					matcher = SNOMED_URI_MODULE_AND_VERSION_PATTERN.matcher(versionWithoutParams);
-					if (matcher.matches()) {
-						if (codeSystemParams.isUnversionedSnomed()) {
-							throw exception("A specific version can not be requested when using " +
-									"the '" + SNOMED_URI_UNVERSIONED + "' code system.", IssueType.INVARIANT, 400);
-						}
-						codeSystemParams.setSnomedModule(matcher.group(1));
-						codeSystemParams.setVersion(matcher.group(2));
-					} else {
-						throw exception(format("The version parameter for the '" + SNOMED_URI + "' system must use the format " +
-								"'http://snomed.info/sct/[sctid]' or http://snomed.info/sct/[sctid]/version/[YYYYMMDD]. Version provided does not match: '%s'.", versionWithoutParams),
-								IssueType.INVARIANT, 400);
-					}
-				}
-			} else {
-				// Take version param literally
-				codeSystemParams.setVersion(version);
-			}
+	private static void applyVersion(FHIRCodeSystemVersionParams codeSystemParams, String version) {
+		if ("*".equals(version)) {
+			throw FHIRHelper.exception("Version '*' is not supported.", OperationOutcome.IssueType.NOTSUPPORTED, 400);
 		}
-		if (systemId != null) {
-			if (codeSystemParams.isSnomed()) {
-				Matcher idMatcher = SCT_ID_PATTERN.matcher(systemId);
-				if (!idMatcher.matches()) {
-					throw exception("SNOMED system and id specified but id does not match expected format " +
-							"sct_[moduleId]_[YYYYMMDD].", OperationOutcome.IssueType.CONFLICT, 400);
-				}
-				String moduleFromId = idMatcher.group(1);
-				String versionFromId = idMatcher.group(2);
-				if (codeSystemParams.getSnomedModule() != null && !codeSystemParams.getSnomedModule().equals(moduleFromId)) {
-					throw exception("SNOMED module in system id and uri do not match.", OperationOutcome.IssueType.CONFLICT, 400);
-				}
-				if (codeSystemParams.getVersion() != null && !codeSystemParams.getVersion().equals(versionFromId)) {
-					throw exception("SNOMED version in system id and uri do not match.", OperationOutcome.IssueType.CONFLICT, 400);
-				}
-				// For SNOMED store the parsed module and version, not the id.
-				codeSystemParams.setSnomedModule(moduleFromId);
-				codeSystemParams.setVersion(versionFromId);
-			} else {
-				codeSystemParams.setId(systemId);
-			}
+		if (codeSystemParams.isSnomed()) {
+			parseSnomedVersion(codeSystemParams, version);
+		} else {
+			// Take version param literally
+			codeSystemParams.setVersion(version);
 		}
+	}
 
-		return codeSystemParams;
+	private static void parseSnomedVersion(FHIRCodeSystemVersionParams codeSystemParams, String version) {
+		// Parse module and version from snomed version URI
+		// Either "http://snomed.info/sct/[sctid]" or "http://snomed.info/sct/[sctid]/version/[YYYYMMDD]"
+		String versionWithoutParams = version.contains("?") ? version.substring(0, version.indexOf("?")) : version;
+		Matcher matcher = SNOMED_URI_MODULE_PATTERN.matcher(versionWithoutParams);
+		if (matcher.matches()) {
+			codeSystemParams.setSnomedModule(matcher.group(1));
+			if (versionWithoutParams.startsWith(SNOMED_URI_UNVERSIONED)) {
+				codeSystemParams.setUnversioned(true);
+			}
+			return;
+		}
+		matcher = SNOMED_URI_MODULE_AND_VERSION_PATTERN.matcher(versionWithoutParams);
+		if (!matcher.matches()) {
+			throw exception(format("The version parameter for the '" + SNOMED_URI + "' system must use the format " +
+					"'http://snomed.info/sct/[sctid]' or http://snomed.info/sct/[sctid]/version/[YYYYMMDD]. Version provided does not match: '%s'.", versionWithoutParams),
+					IssueType.INVARIANT, 400);
+		}
+		if (codeSystemParams.isUnversionedSnomed()) {
+			throw exception("A specific version can not be requested when using " +
+					"the '" + SNOMED_URI_UNVERSIONED + "' code system.", IssueType.INVARIANT, 400);
+		}
+		codeSystemParams.setSnomedModule(matcher.group(1));
+		codeSystemParams.setVersion(matcher.group(2));
+		if (versionWithoutParams.startsWith(SNOMED_URI_UNVERSIONED)) {
+			codeSystemParams.setUnversioned(true);
+		}
+	}
+
+	private static void applySystemId(FHIRCodeSystemVersionParams codeSystemParams, String systemId) {
+		if (!codeSystemParams.isSnomed()) {
+			codeSystemParams.setId(systemId);
+			return;
+		}
+		Matcher idMatcher = SCT_ID_PATTERN.matcher(systemId);
+		if (!idMatcher.matches()) {
+			throw exception("SNOMED system and id specified but id does not match expected format " +
+					"sct_[moduleId]_[YYYYMMDD].", OperationOutcome.IssueType.CONFLICT, 400);
+		}
+		String moduleFromId = idMatcher.group(1);
+		String versionFromId = idMatcher.group(2);
+		if (codeSystemParams.getSnomedModule() != null && !codeSystemParams.getSnomedModule().equals(moduleFromId)) {
+			throw exception("SNOMED module in system id and uri do not match.", OperationOutcome.IssueType.CONFLICT, 400);
+		}
+		if (codeSystemParams.getVersion() != null && !codeSystemParams.getVersion().equals(versionFromId)) {
+			throw exception("SNOMED version in system id and uri do not match.", OperationOutcome.IssueType.CONFLICT, 400);
+		}
+		// For SNOMED store the parsed module and version, not the id.
+		codeSystemParams.setSnomedModule(moduleFromId);
+		codeSystemParams.setVersion(versionFromId);
 	}
 
 	public boolean hasUsageContext(MetadataResource r, TokenParam context) {

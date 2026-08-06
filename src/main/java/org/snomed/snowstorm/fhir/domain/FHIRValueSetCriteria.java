@@ -6,9 +6,9 @@ import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
-
+import java.util.Optional;
 import static org.snomed.snowstorm.core.util.CollectionUtils.orEmpty;
 
 public class FHIRValueSetCriteria {
@@ -21,6 +21,8 @@ public class FHIRValueSetCriteria {
 
 	@Field(type = FieldType.Keyword)
 	private List<String> codes;
+
+	private List<FHIRValueSetCriteriaConcept> conceptReferences;
 
 	private List<FHIRValueSetFilter> filter;
 
@@ -38,13 +40,20 @@ public class FHIRValueSetCriteria {
 			}
 			codes.add(code.getCode());
 		}
+		hapiCriteria.getConcept().stream().forEach( c ->{
+			if (conceptReferences == null){
+				conceptReferences = new ArrayList<>();
+
+			}
+			conceptReferences.add(new FHIRValueSetCriteriaConcept(c));
+		});
 		for (ValueSet.ConceptSetFilterComponent hapiFilter : hapiCriteria.getFilter()) {
 			if (filter == null) {
 				filter = new ArrayList<>();
 			}
 			filter.add(new FHIRValueSetFilter(hapiFilter));
 		}
-		valueSet = hapiCriteria.getValueSet().stream().map(CanonicalType::getValueAsString).collect(Collectors.toList());
+		valueSet = hapiCriteria.getValueSet().stream().map(CanonicalType::getValueAsString).toList();
 	}
 
 	public ValueSet.ConceptSetComponent getHapi() {
@@ -54,12 +63,20 @@ public class FHIRValueSetCriteria {
 		for (String code : orEmpty(codes)) {
 			ValueSet.ConceptReferenceComponent component = new ValueSet.ConceptReferenceComponent();
 			component.setCode(code);
+			if (conceptReferences != null) {
+				conceptReferences.stream().filter(x -> code.equals(x.getCode()))
+						.forEach(x -> {
+									Optional.ofNullable(x.getExtensions()).orElse(Collections.emptyList()).forEach(ext -> component.addExtension(ext.getHapi()));
+									Optional.ofNullable(x.getDesignations()).orElse(Collections.emptyList()).forEach(d -> component.addDesignation(d.getHapi()));
+								}
+						);
+			}
 			hapiConceptSet.addConcept(component);
 		}
-		for (FHIRValueSetFilter filter : orEmpty(getFilter())) {
-			hapiConceptSet.addFilter(filter.getHapi());
+		for (FHIRValueSetFilter vsFilter : orEmpty(getFilter())) {
+			hapiConceptSet.addFilter(vsFilter.getHapi());
 		}
-		hapiConceptSet.setValueSet(orEmpty(valueSet).stream().map(CanonicalType::new).collect(Collectors.toList()));
+		hapiConceptSet.setValueSet(orEmpty(valueSet).stream().map(CanonicalType::new).toList());
 		return hapiConceptSet;
 	}
 

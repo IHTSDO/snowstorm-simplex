@@ -7,16 +7,19 @@ import org.hl7.fhir.r4.model.*;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.snomed.langauges.ecl.ECLException;
+import org.snomed.langauges.ecl.ECLQueryBuilder;
 import org.snomed.snowstorm.core.data.domain.ConceptMini;
 import org.snomed.snowstorm.core.data.domain.Concepts;
 import org.snomed.snowstorm.core.data.services.DescriptionService;
 import org.snomed.snowstorm.core.data.services.QueryService;
 import org.snomed.snowstorm.core.pojo.LanguageDialect;
+import org.snomed.snowstorm.ecl.domain.expressionconstraint.SExpressionConstraint;
+import org.snomed.snowstorm.fhir.pojo.FHIRCodeSystemVersionParams;
 import org.snomed.snowstorm.fhir.config.FHIRConstants;
 import org.snomed.snowstorm.fhir.domain.*;
 import org.snomed.snowstorm.fhir.pojo.CanonicalUri;
 import org.snomed.snowstorm.fhir.repositories.FHIRValueSetRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.Queries;
 import org.springframework.stereotype.Service;
@@ -25,6 +28,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static co.elastic.clients.elasticsearch._types.query_dsl.QueryBuilders.bool;
 import static io.kaicode.elasticvc.helper.QueryHelper.*;
@@ -34,9 +38,13 @@ import static org.snomed.snowstorm.core.util.CollectionUtils.orEmpty;
 import static org.snomed.snowstorm.fhir.services.FHIRHelper.exception;
 import static org.snomed.snowstorm.fhir.services.FHIRHelper.mutuallyExclusive;
 import static org.snomed.snowstorm.fhir.services.FHIRValueSetService.MISSING_VALUESET;
+import static org.snomed.snowstorm.fhir.services.FHIRValueSetService.TX_ISSUE_TYPE;
+import static org.snomed.snowstorm.fhir.services.FHIRValueSetService.NOT_FOUND;
+import static org.snomed.snowstorm.fhir.services.FHIRValueSetService.VS_INVALID;
+import static org.snomed.snowstorm.fhir.services.FHIRValueSetService.HL7_SD_OUTCOME_MESSAGE_ID;
 
 @Service
-public class FHIRValueSetFinderService implements FHIRConstants {
+public class FHIRValueSetFinderService implements FHIRConstants, TxResourceAware {
 
 	private static final PageRequest PAGE_OF_ONE = PageRequest.of(0, 1);
 
@@ -44,17 +52,26 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
 
-	@Autowired
-	private FHIRValueSetRepository valueSetRepository;
+	private final FHIRValueSetRepository valueSetRepository;
 
-	@Autowired
-	private QueryService snomedQueryService;
+	private final QueryService snomedQueryService;
 
-	@Autowired
-	private FHIRConceptService conceptService;
+	private final FHIRConceptService conceptService;
 
-	@Autowired
-	private FHIRValueSetConstraintsService constraintsService;
+	private final FHIRValueSetConstraintsService constraintsService;
+
+	private final FHIRCodeSystemService codeSystemService;
+
+	private final ECLQueryBuilder eclQueryBuilder;
+
+	public FHIRValueSetFinderService(FHIRValueSetRepository valueSetRepository, QueryService snomedQueryService, FHIRConceptService conceptService, FHIRValueSetConstraintsService constraintsService, FHIRCodeSystemService codeSystemService, ECLQueryBuilder eclQueryBuilder) {
+		this.valueSetRepository = valueSetRepository;
+		this.snomedQueryService = snomedQueryService;
+		this.conceptService = conceptService;
+		this.constraintsService = constraintsService;
+		this.codeSystemService = codeSystemService;
+		this.eclQueryBuilder = eclQueryBuilder;
+	}
 
 	public static final String REFSETS_WITH_MEMBERS = "Refsets";
 
@@ -102,6 +119,13 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		mutuallyExclusive("id", id, "valueSet", hapiValueSet);
 		mutuallyExclusive("url", url, "valueSet", hapiValueSet);
 
+		// Parse pipe-notation version from URL (e.g. "http://.../ValueSet/foo|1.0.0")
+		if (url != null && url.contains("|") && version == null) {
+			int pipeIndex = url.indexOf('|');
+			version = url.substring(pipeIndex + 1);
+			url = url.substring(0, pipeIndex);
+		}
+
 		if (id != null) {
 			Optional<FHIRValueSet> valueSetOptional = valueSetRepository.findById(id);
 			if (valueSetOptional.isEmpty()) {
@@ -111,7 +135,7 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 			idUrlCrosscheck(id, url, valueSet);
 
 			hapiValueSet = valueSet.getHapi();
-		} else if (FHIRHelper.isSnomedUri(url) && url.contains(FHIR_VS)) {
+		} else if (url != null && FHIRHelper.isSnomedUri(url) && url.contains(FHIR_VS)) {
 			// Create snomed implicit value set
 			hapiValueSet = createSnomedImplicitValueSet(url);
 		} else if (url != null && url.endsWith(FHIR_VS)) {
@@ -126,10 +150,14 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 			valueSet.setStatus(Enumerations.PublicationStatus.ACTIVE.toCode());
 			hapiValueSet = valueSet.getHapi();
 		} else if (version != null){
-			hapiValueSet = find(url, version).map(FHIRValueSet::getHapi).orElse(null);
+			Resource overlayResource = TxResourceContext.lookup(url, version);
+			hapiValueSet = (overlayResource instanceof ValueSet vs) ? vs
+					: find(url, version).map(FHIRValueSet::getHapi).orElse(null);
 
 		} else if (hapiValueSet == null) {
-			hapiValueSet = findLatestByUrl(url).map(FHIRValueSet::getHapi).orElse(null);
+			Resource overlayResource = TxResourceContext.lookup(url, null);
+			hapiValueSet = (overlayResource instanceof ValueSet vs) ? vs
+					: findLatestByUrl(url).map(FHIRValueSet::getHapi).orElse(null);
 		}
 		return hapiValueSet;
 	}
@@ -151,6 +179,12 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		if (url.endsWith("?fhir_vs=refset")) {
 			filter = new FHIRValueSetFilter("expression", "=", REFSETS_WITH_MEMBERS);
 		} else {
+			if (url.contains(IMPLICIT_ISA) || url.contains(IMPLICIT_REFSET)) {
+				String sctId = url.contains(IMPLICIT_ISA)
+						? url.substring(url.indexOf(IMPLICIT_ISA) + IMPLICIT_ISA.length())
+						: url.substring(url.indexOf(IMPLICIT_REFSET) + IMPLICIT_REFSET.length());
+				validateSnomedImplicitValueSetConcept(url, sctId, includeCriteria);
+			}
 			String ecl = determineEcl(url);
 			filter = new FHIRValueSetFilter("constraint", "=", ecl);
 		}
@@ -162,6 +196,25 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		valueSet.setCompose(compose);
 		valueSet.setStatus(Enumerations.PublicationStatus.ACTIVE.toCode());
 		return valueSet.getHapi();
+	}
+
+	private void validateSnomedImplicitValueSetConcept(String url, String sctId, FHIRValueSetCriteria includeCriteria) {
+		FHIRCodeSystemVersionParams params = FHIRHelper.getCodeSystemVersionParams(
+				includeCriteria.getSystem(), includeCriteria.getVersion());
+		FHIRCodeSystemVersion csVersion = codeSystemService.findCodeSystemVersion(params);
+		String message = format("A definition for the value Set '%s' could not be found", url);
+		if (csVersion == null) {
+			CodeableConcept detail = new CodeableConcept(new Coding(TX_ISSUE_TYPE, NOT_FOUND, null)).setText(message);
+			throw exception(message, OperationOutcome.IssueType.NOTFOUND, 404, null, detail);
+		}
+		// For isa/<sctId>: concept must exist (<<sctId is non-empty if the concept exists)
+		// For refset/<sctId>: concept must be a SNOMED CT reference set type (descendant of 900000000000455006)
+		String checkEcl = url.contains(IMPLICIT_ISA) ? "<<" + sctId : "<<900000000000455006 AND " + sctId;
+		QueryService.ConceptQueryBuilder query = snomedQueryService.createQueryBuilder(false).ecl(checkEcl);
+		if (snomedQueryService.searchForIds(query, csVersion.getSnomedBranch(), PAGE_OF_ONE).isEmpty()) {
+			CodeableConcept detail = new CodeableConcept(new Coding(TX_ISSUE_TYPE, NOT_FOUND, null)).setText(message);
+			throw exception(message, OperationOutcome.IssueType.NOTFOUND, 404, null, detail);
+		}
 	}
 
 	/*
@@ -209,7 +262,7 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		Set<FHIRCodeSystemVersion> generic = new HashSet<>();
 
 		for (FHIRCodeSystemVersion version : expansionVersions) {
-			if (coding.getSystem().equals(version.getUrl()) &&
+			if (coding.getSystem().equals(version.getUrl().replace("xsct", "sct")) &&
 					(coding.getVersion() == null || version.isVersionMatch(coding.getVersion()))) {
 				if (version.isOnSnomedBranch()) {
 					snomed.add(version);
@@ -228,11 +281,16 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 
 		if (snomedVersions.isEmpty()) return null;
 
+		// Post-coordinated expressions cannot be looked up as concept IDs; treat as not found
+		if (coding.getCode() != null && coding.getCode().contains(":")) {
+			return null;
+		}
+
 		QueryService.ConceptQueryBuilder query = null;
 
 		for (FHIRCodeSystemVersion snomedVersion : snomedVersions) {
 			if (query == null) {
-				query = getSnomedConceptQuery(null, false, criteria, dialects);
+				query = getSnomedConceptQuery(null, false, criteria, dialects, null);
 			}
 			query.conceptIds(Collections.singleton(coding.getCode()));
 
@@ -247,6 +305,18 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		return null;
 	}
 
+	public Map<String, String> findSnomedPreferredTerms(Set<String> conceptIds, FHIRCodeSystemVersion snomedVersion, List<LanguageDialect> languageDialects) {
+		if (conceptIds.isEmpty() || !snomedVersion.isOnSnomedBranch()) return Collections.emptyMap();
+		QueryService.ConceptQueryBuilder query = snomedQueryService.createQueryBuilder(false).conceptIds(conceptIds);
+		if (!languageDialects.isEmpty()) {
+			query.resultLanguageDialects(languageDialects);
+		}
+		return snomedQueryService.search(query, snomedVersion.getSnomedBranch(), PageRequest.of(0, conceptIds.size()))
+				.getContent().stream()
+				.filter(m -> m.getPt() != null && m.getPt().getTerm() != null)
+				.collect(Collectors.toMap(ConceptMini::getConceptId, m -> m.getPt().getTerm()));
+	}
+
 	private FHIRConcept findInGeneric(Coding coding,
 	                                  Set<FHIRCodeSystemVersion> genericVersions,
 	                                  CodeSelectionCriteria criteria) {
@@ -259,7 +329,36 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		addCodeConstraintToQuery(coding, caseSensitive, query);
 
 		List<FHIRConcept> concepts = conceptService.findConcepts(query, PAGE_OF_ONE).getContent();
-		return concepts.isEmpty() ? null : concepts.get(0);
+		if (!concepts.isEmpty()) return concepts.get(0);
+
+		// Fallback for inline CS versions not stored in Elasticsearch
+		for (FHIRCodeSystemVersion version : genericVersions) {
+			if (version.getInlineCodeSystem() != null && isCodeIncludedInCriteria(coding.getCode(), version, criteria)) {
+				Optional<FHIRConcept> concept = findInlineConcept(version, coding.getCode());
+				if (concept.isPresent()) return concept.get();
+			}
+		}
+		return null;
+	}
+
+	private boolean isCodeIncludedInCriteria(String code, FHIRCodeSystemVersion version, CodeSelectionCriteria criteria) {
+		ConjunctionConstraints conjunctionConstraints = criteria.getInclusionConstraints().get(version);
+		if (conjunctionConstraints == null) return false;
+		if (conjunctionConstraints.isEmpty()) return true;
+		for (ConjunctionConstraints.DisjunctionConstraints disjunctionConstraints : conjunctionConstraints.getDisjunctionConstraints()) {
+			boolean orSatisfied = disjunctionConstraints.getConstraints().stream().anyMatch(constraint -> {
+				Collection<String> constraintCodes = constraint.getCodes();
+				if (constraintCodes != null && !constraintCodes.isEmpty()) {
+					return constraintCodes.contains(code);
+				}
+				// No explicit codes — accept unless the constraint uses ECL or hierarchy (not evaluable inline)
+				return !constraint.hasEcl()
+						&& orEmpty(constraint.getParent()).isEmpty()
+						&& orEmpty(constraint.getAncestor()).isEmpty();
+			});
+			if (!orSatisfied) return false;
+		}
+		return true;
 	}
 
 	private record VersionPartition(Set<FHIRCodeSystemVersion> snomed,
@@ -267,18 +366,19 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 
 
 	public QueryService.ConceptQueryBuilder getSnomedConceptQuery(String filter, boolean activeOnly, CodeSelectionCriteria codeSelectionCriteria,
-	                                                               List<LanguageDialect> languageDialects) {
+	                                                               List<LanguageDialect> languageDialects, String branchPath) {
 
 		QueryService.ConceptQueryBuilder conceptQuery = snomedQueryService.createQueryBuilder(false);
 		if (codeSelectionCriteria.isAnyECL()) {
-			// ECL search
+			// ECL search — validate individual constraints before assembling to avoid wrapped parens in error messages
+			validateEclConstraints(codeSelectionCriteria, branchPath);
 			String ecl = inclusionExclusionClausesToEcl(codeSelectionCriteria);
 			conceptQuery.ecl(ecl);
 		} else {
 			// Just a set of concept codes
 			Set<String> codes = new HashSet<>();
-			codeSelectionCriteria.getInclusionConstraints().values().stream().flatMap(andConstraints -> andConstraints.constraintsFlattened().stream()).forEach(include -> codes.addAll(include.getCodes()));
-			codeSelectionCriteria.getExclusionConstraints().values().stream().flatMap(andConstraints -> andConstraints.constraintsFlattened().stream()).forEach(include -> codes.removeAll(include.getCodes()));
+			codeSelectionCriteria.getInclusionConstraints().values().stream().flatMap(conjunctionConstraints -> conjunctionConstraints.constraintsFlattened().stream()).forEach(include -> codes.addAll(include.getCodes()));
+			codeSelectionCriteria.getExclusionConstraints().values().stream().flatMap(conjunctionConstraints -> conjunctionConstraints.constraintsFlattened().stream()).forEach(include -> codes.removeAll(include.getCodes()));
 			conceptQuery.conceptIds(codes);
 			if (activeOnly) {
 				conceptQuery.activeFilter(activeOnly);
@@ -316,12 +416,12 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 
 		// Attempt to combine value set constraints to reduce the required Elasticsearch clause count.
 		// (Some LOINC nested value sets exceed the default 1024 clause limit).
-		Map<FHIRCodeSystemVersion, AndConstraints> inclusionConstraints = constraintsService.combineConstraints(codeSelectionCriteria.getInclusionConstraints());
+		Map<FHIRCodeSystemVersion, ConjunctionConstraints> inclusionConstraints = constraintsService.combineConstraints(codeSelectionCriteria.getInclusionConstraints());
 		Set<CodeSelectionCriteria> nestedSelections = constraintsService.combineConstraints(codeSelectionCriteria.getNestedSelections(), codeSelectionCriteria.getValueSetUserRef());
-		Map<FHIRCodeSystemVersion, AndConstraints> exclusionConstraints = codeSelectionCriteria.getExclusionConstraints();
+		Map<FHIRCodeSystemVersion, ConjunctionConstraints> exclusionConstraints = codeSelectionCriteria.getExclusionConstraints();
 
 		// Inclusions
-		for (Map.Entry<FHIRCodeSystemVersion, AndConstraints> versionInclusionConstraints : inclusionConstraints.entrySet()) {
+		for (Map.Entry<FHIRCodeSystemVersion, ConjunctionConstraints> versionInclusionConstraints : inclusionConstraints.entrySet()) {
 			BoolQuery.Builder versionQueryBuilder = getInclusionQueryBuilder(versionInclusionConstraints, codeSelectionCriteria.getValueSetUserRef());
 			valueSetQuery.should(versionQueryBuilder.build()._toQuery());// Must match at least one of these
 		}
@@ -333,7 +433,7 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		}
 
 		// Exclusions
-		for (Map.Entry<FHIRCodeSystemVersion, AndConstraints> versionExclusionConstraints : exclusionConstraints.entrySet()) {
+		for (Map.Entry<FHIRCodeSystemVersion, ConjunctionConstraints> versionExclusionConstraints : exclusionConstraints.entrySet()) {
 			BoolQuery.Builder versionQueryBuilder = getInclusionQueryBuilder(versionExclusionConstraints, codeSelectionCriteria.getValueSetUserRef());
 			valueSetQuery.mustNot(versionQueryBuilder.build()._toQuery());
 		}
@@ -347,6 +447,50 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		} else {
 			fhirConceptQuery.must(termQuery(FHIRConcept.Fields.CODE_LOWER, coding.getCode().toLowerCase()));
 		}
+	}
+
+	private void validateEclConstraints(CodeSelectionCriteria codeSelectionCriteria, String branchPath) {
+		if (branchPath == null) return;
+		Stream.concat(
+				codeSelectionCriteria.getInclusionConstraints().values().stream(),
+				codeSelectionCriteria.getExclusionConstraints().values().stream()
+		).flatMap(conjunctionConstraints -> conjunctionConstraints.constraintsFlattened().stream())
+				.filter(ConceptConstraint::hasEcl)
+				.forEach(constraint -> validateEclConceptsExist(constraint.getEcl(), branchPath));
+	}
+
+	private void validateEclConceptsExist(String ecl, String branchPath) {
+		SExpressionConstraint expression;
+		try {
+			expression = (SExpressionConstraint) eclQueryBuilder.createQuery(ecl);
+		} catch (ECLException e) {
+			throwInvalidEclExpression(ecl, extractParserError(e));
+			return;
+		}
+		for (String conceptId : expression.getConceptIds()) {
+			if (snomedQueryService.searchForIds(snomedQueryService.createQueryBuilder(false).conceptIds(Collections.singleton(conceptId)), branchPath, PAGE_OF_ONE).isEmpty()) {
+				throwInvalidEclExpression(ecl, format("Unknown SNOMED Concept Id: %s", conceptId));
+			}
+		}
+	}
+
+	private void throwInvalidEclExpression(String displayEcl, String parserError) {
+		String message = format("Invalid ECL expression: '%s': (%s)", displayEcl, parserError);
+		CodeableConcept detail = new CodeableConcept(new Coding(TX_ISSUE_TYPE, VS_INVALID, null)).setText(message);
+		List<Extension> extensions = Collections.singletonList(new Extension(HL7_SD_OUTCOME_MESSAGE_ID, new StringType("INVALID_ECL")));
+		throw exception(message, OperationOutcome.IssueType.INVALID, 400, null, detail, extensions);
+	}
+
+	private String extractParserError(ECLException e) {
+		Throwable t = e;
+		while (t != null) {
+			String msg = t.getMessage();
+			if (msg != null && (msg.startsWith("Syntax error at line") || msg.startsWith("No viable alternative at line"))) {
+				return msg;
+			}
+			t = t.getCause();
+		}
+		return "ECL syntax error";
 	}
 
 	private String inclusionExclusionClausesToEcl(CodeSelectionCriteria criteria) {
@@ -393,7 +537,15 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 		StringBuilder result = new StringBuilder().append("( ").append(ecl).append(" )");
 		for (ConceptConstraint exclusion :
 				criteria.getExclusionConstraints().values().iterator().next().constraintsFlattened()) {
-			result.append(" MINUS ( ").append(exclusion.getEcl()).append(" )");
+			//Even if the inclusion criteria is ECL, it's quite possible (even likely) that the exclusion is just a list of codes.
+			if (exclusion.hasEcl()) {
+				result.append(" MINUS ( ").append(exclusion.getEcl()).append(" )");
+			} else if (exclusion.isSimpleCodeSet()) {
+				String exclusionECL = exclusion.getCodes().stream().collect(Collectors.joining(" OR "));
+				result.append(" MINUS ( ").append(exclusionECL).append(" )");
+			} else {
+				throw new IllegalArgumentException("Invalid exclusion constraint: " + exclusion);
+			}
 		}
 		return result;
 	}
@@ -406,16 +558,16 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 	}
 
 	@NotNull
-	private BoolQuery.Builder getInclusionQueryBuilder(Map.Entry<FHIRCodeSystemVersion, AndConstraints> versionInclusionConstraints, String valueSetUserRef) {
+	private BoolQuery.Builder getInclusionQueryBuilder(Map.Entry<FHIRCodeSystemVersion, ConjunctionConstraints> versionInclusionConstraints, String valueSetUserRef) {
 		BoolQuery.Builder versionQueryBuilder = bool().must(termQuery(FHIRConcept.Fields.CODE_SYSTEM_VERSION, versionInclusionConstraints.getKey().getId()));
 
-		AndConstraints andConstraints = versionInclusionConstraints.getValue();
-		if(!andConstraints.getAndConstraints().isEmpty()) {
+		ConjunctionConstraints conjunctionConstraints = versionInclusionConstraints.getValue();
+		if(!conjunctionConstraints.getDisjunctionConstraints().isEmpty()) {
 			BoolQuery.Builder conjunctionQueries = bool();
-			for (AndConstraints.OrConstraints orConstraints : andConstraints.getAndConstraints()) {
-				if (!orConstraints.getOrConstraints().isEmpty()) {
+			for (ConjunctionConstraints.DisjunctionConstraints disjunctionConstraints : conjunctionConstraints.getDisjunctionConstraints()) {
+				if (!disjunctionConstraints.getConstraints().isEmpty()) {
 					BoolQuery.Builder disjunctionQueries = bool();
-					for (ConceptConstraint constraint : orConstraints.getOrConstraints()) {
+					for (ConceptConstraint constraint : disjunctionConstraints.getConstraints()) {
 						BoolQuery.Builder disjunctionQueryBuilder = bool();
 						addQueryCriteria(constraint, disjunctionQueryBuilder, valueSetUserRef);
 						disjunctionQueries.should(disjunctionQueryBuilder.build()._toQuery());// "disjunctionQueries" contains only "should" conditions, Elasticsearch forces at least one of them to match.
@@ -457,11 +609,10 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 	}
 
 	private void handleCodeConstraint(ConceptConstraint inclusion, BoolQuery.Builder query) {
-		switch (inclusion.getType()) {
-			case MATCH_REGEX ->
-					query.must(regexpQuery(FHIRConcept.Fields.CODE, firstOrNull(inclusion.getCodes())));
-			default ->
-					query.must(termsQuery(FHIRConcept.Fields.CODE, inclusion.getCodes()));
+		if (inclusion.getType() == ConceptConstraint.Type.MATCH_REGEX) {
+			query.must(regexpQuery(FHIRConcept.Fields.CODE, firstOrNull(inclusion.getCodes())));
+		} else {
+			query.must(termsQuery(FHIRConcept.Fields.CODE, inclusion.getCodes()));
 		}
 	}
 
@@ -469,11 +620,10 @@ public class FHIRValueSetFinderService implements FHIRConstants {
 	                                    BoolQuery.Builder query,
 	                                    String field,
 	                                    Set<String> values) {
-		switch (inclusion.getType()) {
-			case MATCH_REGEX ->
-					query.must(regexpQuery(field, firstOrNull(values)));
-			default ->
-					query.must(termsQuery(field, values));
+		if (inclusion.getType() == ConceptConstraint.Type.MATCH_REGEX) {
+			query.must(regexpQuery(field, firstOrNull(values)));
+		} else {
+			query.must(termsQuery(field, values));
 		}
 	}
 

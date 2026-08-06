@@ -1,16 +1,16 @@
 package org.snomed.snowstorm.fhir.services;
 
-import jakarta.servlet.http.HttpServletRequest;
-
-import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.context.support.IValidationSupport;
-import ca.uhn.fhir.rest.server.RestfulServer;
-import ca.uhn.fhir.rest.server.RestfulServerConfiguration;
-import ca.uhn.fhir.rest.server.provider.ServerCapabilityStatementProvider;
-import ca.uhn.fhir.rest.server.util.ISearchParamRegistry;
-import org.hl7.fhir.instance.model.api.IBaseConformance;
 import ca.uhn.fhir.rest.annotation.Metadata;
 import ca.uhn.fhir.rest.api.server.RequestDetails;
+import ca.uhn.fhir.rest.server.RestfulServer;
+import ca.uhn.fhir.rest.server.provider.ServerCapabilityStatementProvider;
+import jakarta.servlet.http.HttpServletRequest;
+import org.hl7.fhir.instance.model.api.IBaseConformance;
+import org.hl7.fhir.r4.model.*;
+import org.springframework.boot.info.BuildProperties;
+
+import java.util.Arrays;
+import java.util.Date;
 
 /**
  * See https://www.hl7.org/fhir/terminologycapabilities.html
@@ -20,24 +20,60 @@ import ca.uhn.fhir.rest.api.server.RequestDetails;
  */
 public class FHIRTerminologyCapabilitiesProvider extends ServerCapabilityStatementProvider {
 
-	public FHIRTerminologyCapabilitiesProvider(RestfulServer theServer) {
+	private final BuildProperties buildProperties;
+	private final FHIRCodeSystemService codeSystemService;
+
+	public FHIRTerminologyCapabilitiesProvider(RestfulServer theServer, BuildProperties buildProperties, FHIRCodeSystemService codeSystemService) {
 		super(theServer);
+		this.buildProperties = buildProperties;
+		this.codeSystemService = codeSystemService;
 	}
 
-	public FHIRTerminologyCapabilitiesProvider(FhirContext theContext, RestfulServerConfiguration theServerConfiguration) {
-		super(theContext, theServerConfiguration);
-	}
-
-	public FHIRTerminologyCapabilitiesProvider(RestfulServer theRestfulServer, ISearchParamRegistry theSearchParamRegistry, IValidationSupport theValidationSupport) {
-		super(theRestfulServer, theSearchParamRegistry, theValidationSupport);
-	}
-
-	@Metadata
+	@Metadata(cacheMillis = 0)
 	public IBaseConformance getMetadataResource(HttpServletRequest request, RequestDetails requestDetails) {
-		if (request.getParameter("mode") != null && request.getParameter("mode").equals("terminology")) {
-			return new FHIRTerminologyCapabilities().withDefaults();
+		if ("terminology".equals(request.getParameter("mode"))) {
+			FHIRTerminologyCapabilities tc = new FHIRTerminologyCapabilities().withDefaults(this.buildProperties,this.codeSystemService);
+			if (buildProperties != null) {
+				tc.setVersion(buildProperties.getVersion());
+				tc.setDate(new Date(buildProperties.getTime().toEpochMilli()));
+			}
+			TerminologyCapabilities.TerminologyCapabilitiesExpansionComponent expansion = new TerminologyCapabilities.TerminologyCapabilitiesExpansionComponent();
+			Arrays.asList("activeOnly",
+			"check-system-version",
+			"count",
+			"displayLanguage",
+			"excludeNested",
+			"force-system-version",
+			"includeDefinition",
+			"includeDesignations",
+			"offset",
+			"property",
+			"system-version",
+			"tx-resource").forEach(x -> expansion.addParameter(new TerminologyCapabilities.TerminologyCapabilitiesExpansionParameterComponent().setName(x)));
+			tc.setExpansion(expansion);
+			return tc;
 		} else {
-			return super.getServerConformance(request, requestDetails);
+			IBaseConformance resource = super.getServerConformance(request, requestDetails);
+			CapabilityStatement cs = (CapabilityStatement) resource;
+			Extension testsVersion = new Extension("http://hl7.org/fhir/uv/application-feature/StructureDefinition/feature");
+			testsVersion.addExtension("definition", new CanonicalType("http://hl7.org/fhir/uv/tx-tests/FeatureDefinition/test-version"));
+			testsVersion.addExtension("value", new CodeType("1.7.0"));
+			cs.addExtension(testsVersion);
+			Extension codeSystemAsParameter = new Extension("http://hl7.org/fhir/uv/application-feature/StructureDefinition/feature");
+			codeSystemAsParameter.addExtension("definition", new CanonicalType("http://hl7.org/fhir/uv/tx-ecosystem/FeatureDefinition/CodeSystemAsParameter"));
+			codeSystemAsParameter.addExtension("value", new StringType("true"));
+			cs.addExtension(codeSystemAsParameter);
+			cs.setUrl(requestDetails.getFhirServerBase()+"/metadata");
+			CapabilityStatement.CapabilityStatementRestResourceOperationComponent operation = new CapabilityStatement.CapabilityStatementRestResourceOperationComponent();
+			operation.setName("versions");
+			operation.setDefinition(requestDetails.getFhirServerBase()+"/versions");
+			cs.getRest().stream().filter(x->x.getMode()== CapabilityStatement.RestfulCapabilityMode.SERVER).findFirst().ifPresent(x -> x.addOperation(operation));
+			if (buildProperties != null) {
+				cs.getSoftware().setReleaseDate(new Date(buildProperties.getTime().toEpochMilli()));
+				cs.setVersion(buildProperties.getVersion());
+				cs.setTitle(buildProperties.getName());
+			}
+			return cs;
 		}
 	}
 }

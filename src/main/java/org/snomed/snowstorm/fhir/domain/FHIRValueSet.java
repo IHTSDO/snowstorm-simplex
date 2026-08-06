@@ -11,8 +11,7 @@ import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 import static org.snomed.snowstorm.core.util.CollectionUtils.orEmpty;
 
@@ -24,6 +23,9 @@ public class FHIRValueSet {
 
 	@Field(type = FieldType.Keyword)
 	private String url;
+
+	@Field(type = FieldType.Keyword)
+	private String language;
 
 	private List<FHIRIdentifier> identifier;
 
@@ -57,6 +59,8 @@ public class FHIRValueSet {
 
 	private FHIRValueSetCompose compose;
 
+	private List<FHIRExtension> extensions;
+
 	public FHIRValueSet() {
 	}
 
@@ -70,6 +74,7 @@ public class FHIRValueSet {
 			}
 			identifier.add(new FHIRIdentifier(hapiIdentifier));
 		}
+		language = hapiValueSet.getLanguage();
 		version = hapiValueSet.getVersion();
 		name = hapiValueSet.getName();
 		title = hapiValueSet.getTitle();
@@ -87,6 +92,15 @@ public class FHIRValueSet {
 		copyright = hapiValueSet.getCopyright();
 
 		compose = new FHIRValueSetCompose(hapiValueSet.getCompose());
+
+		hapiValueSet.getExtension().forEach( e -> {
+			if(extensions == null){
+				extensions = new ArrayList<>();
+			}
+
+			extensions.add(new FHIRExtension(e));
+
+		});
 	}
 
 	@JsonIgnore
@@ -94,6 +108,7 @@ public class FHIRValueSet {
 		ValueSet valueSet = new ValueSet();
 		valueSet.setId(id);
 		valueSet.setUrl(url);
+		valueSet.setLanguage(language);
 
 		for (FHIRIdentifier fhirIdentifier : orEmpty(getIdentifier())) {
 			valueSet.addIdentifier(fhirIdentifier.getHapi());
@@ -113,6 +128,9 @@ public class FHIRValueSet {
 		valueSet.setPurpose(purpose);
 		valueSet.setCopyright(copyright);
 		valueSet.setCompose(compose.getHapi());
+		Optional.ofNullable(extensions)
+				.orElse(Collections.emptyList())
+				.forEach( fe -> valueSet.addExtension(fe.getHapi()));
 		return valueSet;
 	}
 
@@ -226,5 +244,21 @@ public class FHIRValueSet {
 
 	public void setCompose(FHIRValueSetCompose compose) {
 		this.compose = compose;
+	}
+
+	public List<FHIRExtension> getExtensions() {
+		return extensions;
+	}
+
+	public void setExtensions(List<FHIRExtension> extensions) {
+		this.extensions = extensions;
+	}
+
+	public String getLanguage() {
+		return language;
+	}
+
+	public void setLanguage(String language) {
+		this.language = language;
 	}
 }

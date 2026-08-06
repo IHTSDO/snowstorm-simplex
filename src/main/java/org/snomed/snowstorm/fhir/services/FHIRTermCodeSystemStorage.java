@@ -15,10 +15,11 @@ import org.hl7.fhir.r4.model.IdType;
 import org.hl7.fhir.r4.model.ValueSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.snomed.snowstorm.core.data.services.RuntimeServiceException;
+import org.snomed.snowstorm.core.data.services.ServiceException;
 import org.snomed.snowstorm.fhir.config.FHIRConstants;
 import org.snomed.snowstorm.fhir.domain.FHIRCodeSystemVersion;
 import org.snomed.snowstorm.fhir.domain.FHIRConceptMap;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -32,19 +33,22 @@ public class FHIRTermCodeSystemStorage implements ITermCodeSystemStorageSvc {
 	@Value("${snowstorm.rest-api.readonly}")
 	private boolean readOnlyMode;
 
-	@Autowired
-	private FHIRCodeSystemService fhirCodeSystemService;
+	private final FHIRCodeSystemService fhirCodeSystemService;
 
-	@Autowired
-	private FHIRConceptService fhirConceptService;
+	private final FHIRConceptService fhirConceptService;
 
-	@Autowired
-	private FHIRValueSetService fhirValueSetService;
+	private final FHIRValueSetService fhirValueSetService;
 
-	@Autowired
-	private FHIRConceptMapService fhirConceptMapService;
+	private final FHIRConceptMapService fhirConceptMapService;
 
 	private final Logger logger = LoggerFactory.getLogger(getClass());
+
+	public FHIRTermCodeSystemStorage(FHIRCodeSystemService fhirCodeSystemService, FHIRConceptService fhirConceptService, FHIRValueSetService fhirValueSetService, FHIRConceptMapService fhirConceptMapService) {
+		this.fhirCodeSystemService = fhirCodeSystemService;
+		this.fhirConceptService = fhirConceptService;
+		this.fhirValueSetService = fhirValueSetService;
+		this.fhirConceptMapService = fhirConceptMapService;
+	}
 
 	@Override
 	public void storeNewCodeSystemVersion(IResourcePersistentId theCodeSystemResourcePid, String theSystemUri, String theSystemName,
@@ -68,7 +72,11 @@ public class FHIRTermCodeSystemStorage implements ITermCodeSystemStorageSvc {
 		if (codeSystem.getUrl().startsWith(FHIRConstants.ICD10_URI)) {
 			codeSystem.setHierarchyMeaning(CodeSystem.CodeSystemHierarchyMeaning.ISA);
 		}
-		codeSystemVersion = fhirCodeSystemService.createUpdate(codeSystem);
+		try {
+			codeSystemVersion = fhirCodeSystemService.createUpdate(codeSystem);
+		} catch (ServiceException e) {
+			throw new RuntimeServiceException("Failed to create FHIR CodeSystem.", e);
+		}
 		fhirConceptService.saveAllConceptsOfCodeSystemVersion(termCodeSystemVersion, codeSystemVersion);
 
 		valueSets = orEmpty(valueSets);

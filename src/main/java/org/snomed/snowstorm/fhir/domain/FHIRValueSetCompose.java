@@ -13,27 +13,50 @@ public class FHIRValueSetCompose {
 
 	private List<FHIRValueSetCriteria> exclude;
 
+	private List<FHIRExtension> extensions;
+
+	private Boolean inactive;
+
 	public FHIRValueSetCompose() {
 	}
 
 	public FHIRValueSetCompose(ValueSet.ValueSetComposeComponent hapiCompose) {
 		this();
+		if (!hapiCompose.hasInactive()){
+			this.setInactive(null);
+		} else {
+			this.setInactive(hapiCompose.getInactive());
+		}
 		for (ValueSet.ConceptSetComponent hapiInclude : hapiCompose.getInclude()) {
 			addInclude(new FHIRValueSetCriteria(hapiInclude));
 		}
 		for (ValueSet.ConceptSetComponent hapiExclude : hapiCompose.getExclude()) {
-			addInclude(new FHIRValueSetCriteria(hapiExclude));
+			addExclude(new FHIRValueSetCriteria(hapiExclude));
 		}
+
+		hapiCompose.getExtension().forEach( ext -> {
+			if (extensions == null){
+				extensions = new ArrayList<>();
+			}
+
+			extensions.add(new FHIRExtension(ext));
+
+		});
 	}
 
 	public ValueSet.ValueSetComposeComponent getHapi() {
 		ValueSet.ValueSetComposeComponent hapiCompose = new ValueSet.ValueSetComposeComponent();
-		for (FHIRValueSetCriteria include : orEmpty(getInclude())) {
-			hapiCompose.addInclude(include.getHapi());
+		if (this.isInactive()!=null) {
+			hapiCompose.setInactive(this.isInactive());
+		}
+		for (FHIRValueSetCriteria includeCriteria : orEmpty(getInclude())) {
+			hapiCompose.addInclude(includeCriteria.getHapi());
 		}
 		for (FHIRValueSetCriteria excludeCriteria : orEmpty(getExclude())) {
 			hapiCompose.addExclude(excludeCriteria.getHapi());
 		}
+
+		orEmpty(extensions).forEach( ext -> hapiCompose.addExtension(ext.getHapi()));
 		return hapiCompose;
 	}
 
@@ -66,4 +89,21 @@ public class FHIRValueSetCompose {
 	public void setExclude(List<FHIRValueSetCriteria> exclude) {
 		this.exclude = exclude;
 	}
+
+	public void setInactive(Boolean inactive) {
+		this.inactive = inactive;
+	}
+
+	public Boolean isInactive() {
+		return inactive;
+	}
+
+	public List<FHIRExtension> getExtensions() {
+		return extensions;
+	}
+
+	public void setExtensions(List<FHIRExtension> extensions) {
+		this.extensions = extensions;
+	}
+
 }

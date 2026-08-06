@@ -3,7 +3,6 @@ package org.snomed.snowstorm.fhir.pojo;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.ValueSet;
 import org.snomed.snowstorm.fhir.services.FHIRHelper;
-import org.snomed.snowstorm.fhir.services.FHIRValueSetProvider;
 import org.snomed.snowstorm.rest.ControllerHelper;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -37,16 +36,19 @@ public final class ValueSetExpansionParameters {
 	private final CanonicalUri forceSystemVersion;
 	private final String version;
 	private final ValueSet valueSet;
+	private final String property;
+	private final CanonicalUri versionValueSet;
+	private final Boolean allowMaximumSizeExpansion;
 
-	public ValueSetExpansionParameters(ValueSet valueSet, boolean includeDefinition1) {
+	public ValueSetExpansionParameters(ValueSet valueSet, boolean includeDefinition1, boolean allowMaximumSizeExpansion) {
 		this(null, valueSet, null, null, null, null, null, null, null, null, null,
-				null, includeDefinition1, null, null, null, null, null, null, null, null, null, null);
+				null, includeDefinition1, null, null, null, null, null, null, null, null, null, null, null,null, allowMaximumSizeExpansion);
 	}
 
 	public ValueSetExpansionParameters(String id, ValueSet valueSet, String url, String valueSetVersion, String context, String contextDirection, String filter, String date,
-			Integer offset, Integer count, Boolean includeDesignations, List<String> designations, Boolean includeDefinition, Boolean activeOnly,
-			Boolean excludeNested, Boolean excludeNotForUI, Boolean excludePostCoordinated, String displayLanguage, CanonicalUri excludeSystem, CanonicalUri systemVersion,
-			CanonicalUri checkSystemVersion, CanonicalUri forceSystemVersion, String version) {
+									   Integer offset, Integer count, Boolean includeDesignations, List<String> designations, Boolean includeDefinition, Boolean activeOnly,
+									   Boolean excludeNested, Boolean excludeNotForUI, Boolean excludePostCoordinated, String displayLanguage, CanonicalUri excludeSystem, CanonicalUri systemVersion,
+									   CanonicalUri checkSystemVersion, CanonicalUri forceSystemVersion, String version, String property, CanonicalUri versionValueSet, Boolean allowMaximumSizeExpansion) {
 
 		this.id = id;
 		this.url = url;
@@ -71,17 +73,19 @@ public final class ValueSetExpansionParameters {
 		this.forceSystemVersion = forceSystemVersion;
 		this.version = version;
 		this.valueSet = valueSet;
+		this.property = property;
+		this.versionValueSet = versionValueSet;
+		this.allowMaximumSizeExpansion = allowMaximumSizeExpansion;
 	}
 
 	public PageRequest getPageRequest(Sort sort) {
-		int offset = this.offset != null ? this.offset : 0;
-		int pageSize = this.count != null ? this.count : FHIRValueSetProvider.DEFAULT_PAGESIZE;
-		if (offset % pageSize != 0) {
-			throw FHIRHelper.exception(format("Parameter 'offset' '%s' must be a multiplication of 'count' (page size) '%s'.", offset, pageSize),
+		int offsetInt = this.offset != null ? this.offset : 0;
+		int pageSize = this.count != null ? this.count : FHIRHelper.DEFAULT_PAGESIZE;
+		if (pageSize > 0 && offsetInt % pageSize != 0) {
+			throw FHIRHelper.exception(format("Parameter 'offset' '%s' must be a multiplication of 'count' (page size) '%s'.", offsetInt, pageSize),
 					OperationOutcome.IssueType.INVALID, 400);
 		}
 		return ControllerHelper.getPageRequest(offsetInt, pageSize, sort);
-
 	}
 
 	public String getId() {
@@ -122,6 +126,10 @@ public final class ValueSetExpansionParameters {
 
 	public Boolean getIncludeDesignations() {
 		return includeDesignations;
+	}
+
+	public boolean getIncludeDesignationsAsBool() {
+		return includeDesignations != null && includeDesignations;
 	}
 
 	public List<String> getDesignations() {
@@ -168,11 +176,22 @@ public final class ValueSetExpansionParameters {
 		return forceSystemVersion;
 	}
 
+	public String getProperty(){
+		return property;
+	}
+
 	public String getVersion() {
 		return version;
 	}
 
 	public ValueSet getValueSet() {
 		return valueSet;
+	}
+
+	public CanonicalUri getVersionValueSet() { return versionValueSet;
+	}
+
+	public boolean getAllowMaximumSizeExpansionAsBoolean() {
+		return Boolean.TRUE.equals(allowMaximumSizeExpansion);
 	}
 }

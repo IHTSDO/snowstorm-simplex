@@ -2,25 +2,29 @@ package org.snomed.snowstorm.fhir.services;
 
 import org.hl7.fhir.r4.model.*;
 import org.snomed.snowstorm.fhir.domain.ValueSetCycleElement;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 import static java.lang.String.format;
 import static org.snomed.snowstorm.fhir.services.FHIRHelper.exception;
+import static org.snomed.snowstorm.fhir.services.FHIRValueSetService.TX_ISSUE_TYPE;
+import static org.snomed.snowstorm.fhir.services.FHIRValueSetService.VS_INVALID;
 
 @Service
 public class FHIRValueSetCycleDetectionService {
 
-	@Autowired
-	private FHIRValueSetFinderService vsFinderService;
+	private final FHIRValueSetFinderService vsFinderService;
+
+	public FHIRValueSetCycleDetectionService(FHIRValueSetFinderService vsFinderService) {
+		this.vsFinderService = vsFinderService;
+	}
 
 	public void verifyNoCycles(ValueSet hapiValueSet) {
 		List<ValueSetCycleElement> valueSetCycle = getValueSetIncludeExcludeCycle(hapiValueSet);
 		if(!valueSetCycle.isEmpty()) {
 			String message = getCyclicDiagnosticMessage(valueSetCycle);
-			throw exception(message, OperationOutcome.IssueType.PROCESSING, 400, null, new CodeableConcept(new Coding()).setText(message));
+			throw exception(message, OperationOutcome.IssueType.PROCESSING, 400, null, new CodeableConcept(new Coding(TX_ISSUE_TYPE, VS_INVALID, null)).setText(message));
 		}
 	}
 

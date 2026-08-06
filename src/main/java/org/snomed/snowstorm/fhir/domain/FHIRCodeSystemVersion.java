@@ -1,6 +1,7 @@
 package org.snomed.snowstorm.fhir.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.r4.model.CodeSystem;
 import org.hl7.fhir.r4.model.Enumerations;
 import org.joda.time.DateTime;
@@ -15,7 +16,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Transient;
 import org.springframework.data.elasticsearch.annotations.*;
 
-import java.util.Date;
+import java.util.*;
 
 import static org.snomed.snowstorm.fhir.config.FHIRConstants.*;
 
@@ -30,6 +31,9 @@ public class FHIRCodeSystemVersion {
 
 	@Field(type = FieldType.Keyword)
 	private String version;
+
+	@Field(type = FieldType.Keyword)
+	private String language;
 
 	@Field(type = FieldType.Date, format = DateFormat.date_time)
 	private Date date;
@@ -52,14 +56,29 @@ public class FHIRCodeSystemVersion {
 	@Field(type = FieldType.Boolean)
 	private boolean compositional;
 
+	@Field(type = FieldType.Boolean)
+	private boolean experimental;
+
+	@Field(type = FieldType.Boolean)
+	private boolean caseSensitive = true;
+
 	@Field(type = FieldType.Keyword)
 	private String content;
+
+	@Field(type = FieldType.Keyword)
+	private Set<String> availableLanguages;
+
+	@Field(type = FieldType.Nested)
+	private List<FHIRExtension> extensions;
 
 	@Transient
 	private String snomedBranch;
 
 	@Transient
 	private org.snomed.snowstorm.core.data.domain.CodeSystem snomedCodeSystem;
+
+	@Transient
+	private org.hl7.fhir.r4.model.CodeSystem inlineCodeSystem;
 
 	private static final DateTimeFormatter dateFormat = DateTimeFormat.forPattern("yyyyMMdd");
 	private static final Logger logger = LoggerFactory.getLogger(FHIRCodeSystemVersion.class);
@@ -69,18 +88,21 @@ public class FHIRCodeSystemVersion {
 
 	public FHIRCodeSystemVersion(CodeSystem codeSystem) {
 		url = codeSystem.getUrl();
-		String id = codeSystem.getId();
-		if (id == null) {
+		String provisionalId = codeSystem.getId();
+		version = codeSystem.getVersion();
+		if (provisionalId == null) {
 			// Spec: https://build.fhir.org/resource.html#id
 			// "Ids can be up to 64 characters long, and contain any combination of upper and lowercase ASCII letters, numerals, "-" and ".""
-			id = url.replace("http://", "").replaceAll("[^a-zA-Z0-9.-]", "-");
-			this.id = id;
+			provisionalId = url.replace("http://", "").replaceAll("[^a-zA-Z0-9.-]", "-");
 		} else {
-			this.id = codeSystem.getId().replace("CodeSystem/", "");
+			provisionalId = codeSystem.getId().replace("CodeSystem/", "");
 		}
-		version = codeSystem.getVersion();
+		this.id = provisionalId + (StringUtils.isBlank(version) ? "" : ("-" + version));
+		experimental = codeSystem.getExperimental();
+		caseSensitive = codeSystem.getCaseSensitive();
 		date = codeSystem.getDate();
 		title = codeSystem.getTitle();
+		language = codeSystem.getLanguage();
 		if (title != null) {
 			title = title.replace(" Code System", "");
 		}
@@ -93,6 +115,19 @@ public class FHIRCodeSystemVersion {
 		compositional = codeSystem.getCompositional();
 		CodeSystem.CodeSystemContentMode codeSystemContent = codeSystem.getContent();
 		content = codeSystemContent != null ? codeSystemContent.toCode() : null;
+		codeSystem.getExtension().stream().forEach( e -> {
+			if (extensions == null){
+				extensions = new ArrayList<>();
+			}
+			extensions.add(new FHIRExtension(e));
+		});
+		codeSystem.getConcept().stream().forEach( c->
+			c.getDesignation().stream().forEach( d ->{
+				if (d.getLanguage()!=null){
+					getAvailableLanguages().add(d.getLanguage());
+				}
+			})
+		);
 	}
 
 	public FHIRCodeSystemVersion(CodeSystemVersion snomedVersion) {
@@ -101,7 +136,7 @@ public class FHIRCodeSystemVersion {
 
 		String moduleId = snomedVersion.getCodeSystem().getUriModuleId();
 		id = FHIRCodeSystemService.SCT_ID_PREFIX + moduleId + "_" + snomedVersion.getEffectiveDate();
-		version = SNOMED_URI + "/" + moduleId + VERSION + snomedVersion.getEffectiveDate();
+		version = SNOMED_URI + "/" + moduleId + VERSION_SLASH + snomedVersion.getEffectiveDate();
 		if (title == null) {
 			title = "SNOMED CT release " + snomedVersion.getVersion();
 		}
@@ -115,6 +150,16 @@ public class FHIRCodeSystemVersion {
 		snomedCodeSystem = snomedVersion.getCodeSystem();
 	}
 
+	public FHIRCodeSystemVersion(CodeSystemVersion snomedVersion, boolean unversioned) {
+		this(snomedVersion);
+		if (unversioned) {
+			String moduleId = snomedVersion.getCodeSystem().getUriModuleId();
+			url = SNOMED_URI_UNVERSIONED;
+			id = FHIRCodeSystemService.SCT_ID_PREFIX + moduleId + "_" + UNVERSIONED + "_" + snomedVersion.getEffectiveDate();
+			version = SNOMED_URI_UNVERSIONED + "/" + moduleId + VERSION_SLASH + snomedVersion.getEffectiveDate();
+		}
+	}
+
 	public FHIRCodeSystemVersion(org.snomed.snowstorm.core.data.domain.CodeSystem snomedCodeSystem, boolean unversioned) {
 		name = SNOMED_CT;
 		url = SNOMED_URI;
@@ -126,20 +171,28 @@ public class FHIRCodeSystemVersion {
 		String moduleId = snomedCodeSystem.getUriModuleId();
 		content = CodeSystem.CodeSystemContentMode.COMPLETE.toCode();
 		if (unversioned) {
-			url = SNOMED_URI_UNVERSIONED;
 			id = FHIRCodeSystemService.SCT_ID_PREFIX + moduleId + "_" + UNVERSIONED;
 			url = SNOMED_URI_UNVERSIONED;
 			version = SNOMED_URI_UNVERSIONED + "/" + moduleId;
 		}
 		snomedBranch = snomedCodeSystem.getBranchPath();
+		var languages = snomedCodeSystem.getLanguages();
+		if (languages != null) {
+			language = languages.containsKey("en") ? "en" : languages.values().iterator().next();
+			availableLanguages = new HashSet<>(languages.keySet());
+		}
 		this.snomedCodeSystem = snomedCodeSystem;
 	}
 
 	public CodeSystem toHapiCodeSystem() {
 		CodeSystem codeSystem = new CodeSystem();
+		codeSystem.setExtension(Optional.ofNullable(extensions).orElse(Collections.emptyList()).stream().map(fe -> fe.getHapi()).toList());
 		codeSystem.setId(id);
 		codeSystem.setUrl(url);
-		codeSystem.setVersion(version);
+		if(!"0".equals(version)) {
+			codeSystem.setVersion(version);
+		}
+		codeSystem.setLanguage(language);
 		codeSystem.setDate(date);
 		codeSystem.setName(name);
 		codeSystem.setTitle(title);
@@ -163,6 +216,14 @@ public class FHIRCodeSystemVersion {
 		return snomedBranch != null;
 	}
 
+	public org.hl7.fhir.r4.model.CodeSystem getInlineCodeSystem() {
+		return inlineCodeSystem;
+	}
+
+	public void setInlineCodeSystem(org.hl7.fhir.r4.model.CodeSystem inlineCodeSystem) {
+		this.inlineCodeSystem = inlineCodeSystem;
+	}
+
 	public boolean isSnomedUnversioned() {
 		return SNOMED_URI_UNVERSIONED.equals(url);
 	}
@@ -173,7 +234,11 @@ public class FHIRCodeSystemVersion {
 	}
 
 	public String getCanonical() {
-		return url + "|" + version;
+		if ("0".equals(version)){
+			return url;
+		} else {
+			return url + "|" + version;
+		}
 	}
 
 	public String getId() {
@@ -240,6 +305,17 @@ public class FHIRCodeSystemVersion {
 		this.publisher = publisher;
 	}
 
+	public List<FHIRExtension> getExtensions() {
+		if (extensions == null){
+			extensions = new ArrayList<>();
+		}
+		return extensions;
+	}
+
+	public void setExtensions(List<FHIRExtension> extensions) {
+		this.extensions = extensions;
+	}
+
 	public String getHierarchyMeaning() {
 		return hierarchyMeaning;
 	}
@@ -254,6 +330,14 @@ public class FHIRCodeSystemVersion {
 
 	public void setCompositional(boolean compositional) {
 		this.compositional = compositional;
+	}
+
+	public boolean isExperimental() {
+		return experimental;
+	}
+
+	public boolean isCaseSensitive() {
+		return caseSensitive;
 	}
 
 	public String getContent() {
@@ -277,5 +361,24 @@ public class FHIRCodeSystemVersion {
 	@Override
 	public String toString() {
 		return getId();
+	}
+
+	public String getLanguage() {
+		return language;
+	}
+
+	public void setLanguage(String language) {
+		this.language = language;
+	}
+
+	public Set<String> getAvailableLanguages() {
+		if(availableLanguages == null) {
+			availableLanguages = new HashSet<>();
+		}
+		return availableLanguages;
+	}
+
+	public void setAvailableLanguages(Set<String> availableLanguages) {
+		this.availableLanguages = availableLanguages;
 	}
 }

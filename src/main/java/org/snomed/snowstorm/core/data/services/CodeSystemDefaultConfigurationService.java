@@ -1,8 +1,7 @@
 package org.snomed.snowstorm.core.data.services;
 
-import org.snomed.snowstorm.core.data.services.pojo.CodeSystemDefaultConfiguration;
-
 import jakarta.annotation.PostConstruct;
+import org.snomed.snowstorm.core.data.services.pojo.CodeSystemDefaultConfiguration;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,15 +18,15 @@ public class CodeSystemDefaultConfigurationService {
 		return config;
 	}
 
-	public CodeSystemDefaultConfiguration findByModule(String moduleId) {
+	public CodeSystemDefaultConfiguration findByAlternativeSchemaSctid(String alternativeSchemaSctid) {
 		for (CodeSystemDefaultConfiguration codeSystemConfiguration : configurations) {
-			if (codeSystemConfiguration.module().equals(moduleId)) {
+			if (codeSystemConfiguration.alternateSchemaSctid() != null && codeSystemConfiguration.alternateSchemaSctid().equals(alternativeSchemaSctid)) {
 				return codeSystemConfiguration;
 			}
 		}
 		return null;
 	}
-
+	
 	public String getDefaultModuleId(String codeSystemShortName) {
 		for (CodeSystemDefaultConfiguration codeSystemConfiguration : configurations) {
 			if (codeSystemConfiguration.shortName().equalsIgnoreCase(codeSystemShortName)) {
@@ -48,7 +47,17 @@ public class CodeSystemDefaultConfigurationService {
 			String moduleId = split[1];
 			String countryCode = split.length > 2 ? split[2] : null;
 			String owner = split.length > 3 ? split[3] : null;
-			configurations.add(new CodeSystemDefaultConfiguration(name, codeSystemShortName, moduleId, countryCode, owner));
+			String alternateSchemaUri = split.length > 4 ? split[4] : null;
+			String alternateSchemaSctid = split.length > 5 ? split[5] : null;
+			configurations.add(new CodeSystemDefaultConfiguration(
+					name,
+					codeSystemShortName,
+					moduleId,
+					countryCode,
+					owner,
+					alternateSchemaUri,
+					alternateSchemaSctid
+			));
 		}
 	}
 

@@ -111,6 +111,10 @@ public class Identifier extends SnomedComponent<Identifier> implements Identifie
 		return identifierSchemeId;
 	}
 
+	public String getIdentifierSchemaId() {
+		return identifierSchemeId;
+	}
+
 	public void setIdentifierScheme(ConceptMini identifierScheme) {
 		this.identifierScheme = identifierScheme;
 	}

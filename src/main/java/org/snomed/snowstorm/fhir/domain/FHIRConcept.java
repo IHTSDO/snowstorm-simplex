@@ -6,6 +6,7 @@ import ca.uhn.fhir.jpa.entity.TermConceptParentChildLink;
 import ca.uhn.fhir.jpa.entity.TermConceptProperty;
 import org.hl7.fhir.r4.model.CodeSystem;
 import org.snomed.snowstorm.core.data.domain.ConceptMini;
+import org.snomed.snowstorm.core.data.domain.Concepts;
 import org.snomed.snowstorm.core.data.domain.Description;
 import org.snomed.snowstorm.core.pojo.LanguageDialect;
 import org.snomed.snowstorm.core.pojo.TermLangPojo;
@@ -15,7 +16,6 @@ import org.springframework.data.annotation.Transient;
 import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
-import org.springframework.data.elasticsearch.annotations.Setting;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -25,14 +25,24 @@ import static org.snomed.snowstorm.fhir.config.FHIRConstants.SNOMED_URI;
 @Document(indexName = "#{@indexNameProvider.indexName('fhir-concept')}", createIndex = false)
 public class FHIRConcept implements FHIRGraphNode {
 
-	public interface Fields {
+    private static final String INACTIVE = "inactive";
+    private static final String STATUS_RETIRED = "retired";
+    private static final String PROPERTY_STATUS = "status";
+
+	public static final String EXTENSION_MARKER = "://";
+    public static final String FHIR_STRUCTURE_DEFINITION_STRUCTUREDEFINITION_STANDARDS_STATUS = "http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status";
+
+    public interface Fields {
 		String CODE_SYSTEM_VERSION = "codeSystemVersion";
 		String CODE = "code";
+		String CODE_LOWER = "codeLower";
 		String DISPLAY = "display";
 		String DEFINITION = "definition";
 		String DISPLAY_LENGTH = "displayLen";
 		String PARENTS = "parents";
 		String ANCESTORS = "ancestors";
+		String PROPERTIES = "properties";
+		String EXTENSIONS = "extensions";
 	}
 
 	@Id
@@ -45,6 +55,9 @@ public class FHIRConcept implements FHIRGraphNode {
 	@Field(type = FieldType.Keyword)
 	private String code;
 
+	@Field(type = FieldType.Keyword)
+	private String codeLower;
+
 	private String display;
 
 	@Field(type = FieldType.Integer)
@@ -53,7 +66,7 @@ public class FHIRConcept implements FHIRGraphNode {
 	private String definition;
 
 	@Transient
-	private final boolean active;
+	private Boolean active;
 
 	@Field(type = FieldType.Keyword)
 	private Set<String> parents;
@@ -65,16 +78,21 @@ public class FHIRConcept implements FHIRGraphNode {
 
 	private Map<String, List<FHIRProperty>> properties;
 
+	private Map<String, List<FHIRProperty>> extensions;
+
 	public FHIRConcept() {
-		active = true;
+		active = null;
 	}
 
 	public FHIRConcept(TermConcept termConcept, FHIRCodeSystemVersion codeSystemVersion) {
 		this.codeSystemVersion = codeSystemVersion.getId();
 
 		code = termConcept.getCode();
+		codeLower = code.toLowerCase();
 		setDisplay(termConcept.getDisplay());
-		active = true;
+		setDefinition(termConcept.getStringProperty(Fields.DEFINITION));
+
+		termConcept.getProperties().stream().filter(x -> ( x.getKey().equals(INACTIVE) && !Boolean.valueOf(x.getValue()).equals(Boolean.FALSE)) || x.getKey().equals(PROPERTY_STATUS) && x.getValue().equals(STATUS_RETIRED)).findFirst().ifPresentOrElse(x -> active = false, ()-> active = true);
 
 		designations = new ArrayList<>();
 		for (TermConceptDesignation designation : termConcept.getDesignations()) {
@@ -82,9 +100,15 @@ public class FHIRConcept implements FHIRGraphNode {
 		}
 
 		properties = new HashMap<>();
-		for (TermConceptProperty property : termConcept.getProperties()) {
-			properties.computeIfAbsent(property.getKey(), (i) -> new ArrayList<>())
+		for (TermConceptProperty property : termConcept.getProperties().stream().filter(p -> !p.getKey().contains(EXTENSION_MARKER)).toList()) {
+			properties.computeIfAbsent(property.getKey(), i -> new ArrayList<>())
 					.add(new FHIRProperty(property));
+		}
+
+		extensions = new HashMap<>();
+		for (TermConceptProperty extension : termConcept.getProperties().stream().filter(p -> p.getKey().contains(EXTENSION_MARKER)).toList()) {
+			extensions.computeIfAbsent(extension.getKey(), i -> new ArrayList<>())
+					.add(new FHIRProperty(extension));
 		}
 
 		parents = new HashSet<>();
@@ -99,19 +123,26 @@ public class FHIRConcept implements FHIRGraphNode {
 		this.codeSystemVersion = codeSystemVersion.getId();
 
 		code = definitionConcept.getCode();
+		codeLower = code.toLowerCase();
 		setDisplay(definitionConcept.getDisplay());
 		setDefinition(definitionConcept.getDefinition());
-
-		active = true;
 
 		designations = definitionConcept.getDesignation().stream()
 				.map(FHIRDesignation::new)
 				.collect(Collectors.toList());
 
 		properties = new HashMap<>();
+		Optional.ofNullable(definitionConcept.getDefinition()).ifPresent(x -> properties.put(Fields.DEFINITION,Collections.singletonList(new FHIRProperty(Fields.DEFINITION,null,x,FHIRProperty.STRING_TYPE))));
+		definitionConcept.getProperty().stream()
+				.filter(FHIRConcept::isPropertyInactive)
+				.findFirst().ifPresentOrElse(x -> active = false, ()-> active = true);
+		properties.put(INACTIVE,Collections.singletonList(new FHIRProperty(INACTIVE,null,Boolean.toString(!isActive()),FHIRProperty.BOOLEAN_TYPE)));
+		extensions = new HashMap<>();
+		definitionConcept.getExtension().forEach(this::addExtensionFromDefinition);
 		parents = new HashSet<>();
 		for (CodeSystem.ConceptPropertyComponent propertyComponent : definitionConcept.getProperty()) {
-			properties.computeIfAbsent(propertyComponent.getCode(), k -> new ArrayList<>()).add(new FHIRProperty(propertyComponent));
+			addPropertyFromDefinition(propertyComponent);
+
 			if (propertyComponent.getCode().equals("parent") || propertyComponent.getCode().equals("subsumedBy")) {
 				parents.add(propertyComponent.hasValueCoding() ? propertyComponent.getValueCoding().getCode() : propertyComponent.getValue().toString());
 			}
@@ -119,12 +150,50 @@ public class FHIRConcept implements FHIRGraphNode {
 		// Ancestors will be set before save
 	}
 
+	private void addExtensionFromDefinition(org.hl7.fhir.r4.model.Extension e) {
+		String url = e.getUrl();
+		if (e.getValue() != null) {
+			FHIRProperty property = new FHIRProperty(
+					url,
+					null,
+					e.getValue().primitiveValue(),
+					FHIRProperty.typeToFHIRPropertyType(e.getValue())
+			);
+			extensions.computeIfAbsent(url, k -> new ArrayList<>()).add(property);
+			// Promote structuredefinition-standards-status to a formal status property
+			if (FHIR_STRUCTURE_DEFINITION_STRUCTUREDEFINITION_STANDARDS_STATUS.equals(url)) {
+				String statusValue = e.getValue().primitiveValue();
+				if ("deprecated".equals(statusValue) || STATUS_RETIRED.equals(statusValue)) {
+					properties.computeIfAbsent(PROPERTY_STATUS, k -> new ArrayList<>())
+							.add(new FHIRProperty(PROPERTY_STATUS, null, statusValue, FHIRProperty.CODE_TYPE));
+				}
+			}
+		}
+	}
+
+	private void addPropertyFromDefinition(CodeSystem.ConceptPropertyComponent propertyComponent) {
+		if (properties.get(propertyComponent.getCode())==null && !propertyComponent.getCode().contains(EXTENSION_MARKER)){
+			properties.put(propertyComponent.getCode(),new ArrayList<>());
+		}
+		try{
+			if(!propertyComponent.getCode().contains(EXTENSION_MARKER)){
+				properties.get(propertyComponent.getCode()).add(new FHIRProperty(propertyComponent));
+			}
+		} catch( UnsupportedOperationException e){
+			List<FHIRProperty> unmodifiableList = properties.get(propertyComponent.getCode());
+			List<FHIRProperty> modifiableList = new ArrayList<>();
+			modifiableList.addAll(unmodifiableList);
+			properties.put(propertyComponent.getCode(), modifiableList);
+			properties.get(propertyComponent.getCode()).add(new FHIRProperty(propertyComponent));
+		}
+	}
 
 	public FHIRConcept(ConceptMini snomedConceptMini, FHIRCodeSystemVersion codeSystemVersion, boolean includeDesignations) {
 		this.codeSystemVersion = codeSystemVersion.getId();
 		code = snomedConceptMini.getConceptId();
+		codeLower = code.toLowerCase();
 		TermLangPojo displayTerm = snomedConceptMini.getPt();
-		if (displayTerm == null) {
+		if (displayTerm == null || displayTerm.getTerm() == null) {
 			displayTerm = snomedConceptMini.getFsn();
 			if (displayTerm == null) {
 				displayTerm = new TermLangPojo(code, "en");
@@ -135,17 +204,22 @@ public class FHIRConcept implements FHIRGraphNode {
 		if (includeDesignations) {
 			designations = new ArrayList<>();
 			// Add display
-			designations.add(new FHIRDesignation(displayTerm.getLang(), FHIRConstants.HL7_DESIGNATION_USAGE, FHIRConstants.DISPLAY, displayTerm.getTerm()));
+			designations.add(new FHIRDesignation(displayTerm.getLang(), FHIRConstants.HL7_CS_DESIGNATION_USAGE, FHIRConstants.DISPLAY, displayTerm.getTerm()));
 
 			// Add other descriptions with acceptability, and then any others without 'use'.
 			List<Description> activeDescriptions = new ArrayList<>(snomedConceptMini.getActiveDescriptions());
 			List<LanguageDialect> requestedLanguageDialects = snomedConceptMini.getRequestedLanguageDialects();
+			String ptTerm = displayTerm.getTerm();
 			activeDescriptions.sort(Comparator.comparing(Description::getType).thenComparing(description -> !description.hasAcceptability(requestedLanguageDialects)));
 			for (Description description : activeDescriptions) {
-				FHIRDesignation designation = new FHIRDesignation(description.getLanguageCode(), description.getTerm());
-				if (description.hasAcceptability(requestedLanguageDialects)) {
-					designation.setUse(SNOMED_URI, description.getTypeId());
+				boolean isFsn = Concepts.FSN.equals(description.getTypeId());
+				boolean isPt = description.getTerm().equals(ptTerm) && description.getLanguageCode().equals(displayTerm.getLang());
+				boolean isPreferred = !requestedLanguageDialects.isEmpty() && description.hasAcceptability(requestedLanguageDialects);
+				if (!isFsn && !isPt && !isPreferred) {
+					continue;
 				}
+				FHIRDesignation designation = new FHIRDesignation(description.getLanguageCode(), description.getTerm());
+				designation.setUse(SNOMED_URI, description.getTypeId());
 				designations.add(designation);
 			}
 		}
@@ -181,6 +255,7 @@ public class FHIRConcept implements FHIRGraphNode {
 
 	public void setCode(String code) {
 		this.code = code;
+		codeLower = code.toLowerCase();
 	}
 
 	public String getDisplay() {
@@ -205,6 +280,10 @@ public class FHIRConcept implements FHIRGraphNode {
 	}
 
 	public boolean isActive() {
+		if (active == null){
+			List<FHIRProperty> props = properties.get(INACTIVE);
+			active = ( props == null || props.isEmpty() || !props.stream().map(x -> Boolean.valueOf(x.getValue())).distinct().allMatch(Boolean.TRUE::equals));
+		}
 		return active;
 	}
 
@@ -241,5 +320,24 @@ public class FHIRConcept implements FHIRGraphNode {
 
 	public void setProperties(Map<String, List<FHIRProperty>> properties) {
 		this.properties = properties;
+	}
+
+	public Map<String, List<FHIRProperty>> getExtensions() {
+		if (extensions == null) {
+			extensions = new HashMap<>();
+		}
+		return extensions;
+	}
+
+	public void setExtensions(Map<String, List<FHIRProperty>> extensions) {
+		this.extensions = extensions;
+	}
+
+	private static boolean isPropertyInactive(CodeSystem.ConceptPropertyComponent x) {
+		if (x.getCode().equals(INACTIVE)) {
+			if (x.hasValueBooleanType() && !Boolean.valueOf(x.getValueBooleanType().getValueAsString()).equals(Boolean.FALSE)) return true;
+			if (x.hasValueCodeType() && !Boolean.valueOf(x.getValueCodeType().getValueAsString()).equals(Boolean.FALSE)) return true;
+		}
+		return x.getCode().equals(PROPERTY_STATUS) && x.hasValueCodeType() && x.getValueCodeType().getCode().equals(STATUS_RETIRED);
 	}
 }

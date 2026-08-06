@@ -544,10 +544,10 @@ public class CodeSystemService {
 			// Populate moduleId
 			String uriModuleId = Concepts.CORE_MODULE;
 			Optional<CodeSystemDefaultConfiguration> defaultConfiguration = codeSystemDefaultConfigurationService.getConfigurations().stream()
-					.filter(config -> config.getShortName().equals(codeSystem.getShortName()))
+					.filter(config -> config.shortName().equals(codeSystem.getShortName()))
 					.findFirst();
 			if (defaultConfiguration.isPresent()) {
-				uriModuleId = defaultConfiguration.get().getModule();
+				uriModuleId = defaultConfiguration.get().module();
 			}
 			codeSystem.setUriModuleId(uriModuleId);
 		}
@@ -602,6 +602,10 @@ public class CodeSystemService {
 	}
 
 	public CodeSystem findByDefaultModule(String moduleId) {
+		return findByUriModule(moduleId);
+	}
+
+	public CodeSystem findByUriModule(String moduleId) {
 		CodeSystem codeSystem = repository.findByUriModuleId(moduleId);
 		return codeSystem != null ? find(codeSystem.getShortName()) : null;
 	}
@@ -712,6 +716,15 @@ public class CodeSystemService {
 			throw new IllegalArgumentException("The given code system and version do not match.");
 		}
 		versionRepository.delete(version);
+	}
+
+	@PreAuthorize("hasPermission('ADMIN', #codeSystem.branchPath)")
+	@CacheEvict(value = {"code-systems", "code-system-branches"}, allEntries = true)
+	public void deleteCodeSystemAndVersions(CodeSystem codeSystem, boolean deleteBranches) {
+		if (deleteBranches) {
+			throw new UnsupportedOperationException("Branch deletion is not supported when deleting a code system.");
+		}
+		deleteCodeSystemAndVersions(codeSystem);
 	}
 
 	@PreAuthorize("hasPermission('ADMIN', #codeSystem.branchPath)")
