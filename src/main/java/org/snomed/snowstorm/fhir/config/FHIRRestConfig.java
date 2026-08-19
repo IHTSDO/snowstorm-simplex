@@ -21,9 +21,6 @@ public class FHIRRestConfig {
 
 	private static final int MB_IN_BYTES = 1024 * 1024;
 
-	@Value("${snowstorm.rest-api.allowAnyOrigin:true}")
-	private boolean allowAnyOrigin;
-
 	@Bean
 	public ServletRegistrationBean<HapiRestfulServlet> hapi(
 			@Autowired(required = false) BuildProperties buildProperties,
