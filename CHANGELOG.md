@@ -3,6 +3,23 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 11.0.0 Release (July 2026)
+Major release with Java 25 upgrade and FHIR improvements.
+
+### Breaking
+- Java 25 must be used with this release.
+- MAINT-2824 Fix `$lookup` property names to use `valueCodes` rather than `valueStrings`
+
+### Features
+- ISTO-128 Add FHIR syndication dashboard at `/fhir` with edition install and progress tracking
+- MAINT-2823 Add FHIR `$versions` operation
+- ISTO-65 Add create/update FHIR ConceptMap and populate CodeSystem URI module from config
+- ISTO-64 Add create/delete FHIR CodeSystem expression supplement
+- MAINT-2871 Add FHIR ValueSet constraints support
+- MAINT-2874 Add FHIR deprecated status, supplement lookup and version hints
+- MAINT-2879 Add batch FHIR validation requests
+- MAINT-2717 Implement Component Field validator for import service with filename and line number in exception messages
+
 ### Improvements
 - ISTO-148 Add CORS headers to allow any origin by default. Can be disabled using `snowstorm.rest-api.allowAnyOrigin=false` flag.
 - PIP-1042 Upgrade to Java 25 and Docker base image to amazoncorretto:25
