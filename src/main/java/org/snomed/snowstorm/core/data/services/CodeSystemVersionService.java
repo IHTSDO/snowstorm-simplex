@@ -53,7 +53,11 @@ public class CodeSystemVersionService {
                 continue;
             }
 			populateDependantVersion(latestVersion);
-			String cacheKey = buildKeyForCache(latestVersion, branchService.findLatest(latestVersion.getBranchPath()).getHeadTimestamp());
+			Branch latestBranch = branchService.findLatest(latestVersion.getBranchPath());
+			if (latestBranch == null) {
+				continue;
+			}
+			String cacheKey = buildKeyForCache(latestVersion, latestBranch.getHeadTimestamp());
 			final Integer dependantVersion = latestVersion.getDependantVersionEffectiveTime();
 			dependantVersionCache.put(cacheKey, dependantVersion != null ? dependantVersion : 0);
         }
