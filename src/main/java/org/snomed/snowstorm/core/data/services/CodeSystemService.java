@@ -473,7 +473,6 @@ public class CodeSystemService {
 					contentInformationCache.remove(branchPath);
 				}
 			}
-			logger.info("Joining content information for Code System '{}' on branch '{}'", codeSystem.getShortName(), branchPath);
 			doJoinContentInformation(codeSystem, branchPath, latestBranch);
 		}
 	}
@@ -495,6 +494,7 @@ public class CodeSystemService {
 			return;
 		}
 
+		logger.info("Joining content information for Code System '{}' on branch '{}'", codeSystem.getShortName(), branchPath);
 		doJoinDependentVersionEffectiveTime(codeSystem, branchPath, workingBranch);
 
 		BranchCriteria branchCriteria = versionControlHelper.getBranchCriteria(workingBranch);
