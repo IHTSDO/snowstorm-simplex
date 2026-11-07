@@ -77,6 +77,9 @@ public class ExportService {
 		if (exportConfiguration.getStartEffectiveTime() != null && exportConfiguration.getType() != RF2Type.SNAPSHOT) {
 			throw new IllegalArgumentException("The startEffectiveTime parameter can only be used with the SNAPSHOT export type.");
 		}
+		if (!CollectionUtils.isEmpty(exportConfiguration.getLanguageRefsetIds()) && !exportConfiguration.isLanguageOnly()) {
+			throw new IllegalArgumentException("The languageRefsetIds parameter can only be used in combination with languageOnly = true.");
+		}
 		branchService.findBranchOrThrow(exportConfiguration.getBranchPath());
 		exportConfiguration.setId(UUID.randomUUID().toString());
 		exportConfiguration.setStatus(ExportStatus.PENDING);
@@ -108,7 +111,7 @@ public class ExportService {
 		File exportFile = exportRF2ArchiveFile(exportConfiguration.getBranchPath(), exportConfiguration.getFilenameEffectiveDate(),
 				exportConfiguration.getType(), exportConfiguration.isConceptsAndRelationshipsOnly(), exportConfiguration.isLanguageOnly(), exportConfiguration.isUnpromotedChangesOnly(),
 				exportConfiguration.getTransientEffectiveTime(), exportConfiguration.getStartEffectiveTime(), exportConfiguration.getModuleIds(),
-				exportConfiguration.isLegacyZipNaming(), exportConfiguration.getRefsetIds(), exportConfiguration.getId());
+				exportConfiguration.isLegacyZipNaming(), exportConfiguration.getRefsetIds(), exportConfiguration.getLanguageRefsetIds(), exportConfiguration.getId());
 
 		logger.debug("Transmitting {} export file {}", exportConfiguration.getId(), exportFile);
 		try (FileInputStream inputStream = new FileInputStream(exportFile)) {
@@ -130,7 +133,7 @@ public class ExportService {
 	}
 
 	public File exportRF2ArchiveFile(String branchPath, String filenameEffectiveDate, RF2Type exportType, boolean forClassification) throws ExportException {
-		return exportRF2ArchiveFile(branchPath, filenameEffectiveDate, exportType, forClassification, false, false, null, null, new HashSet<>(), true, new HashSet<>(), null);
+		return exportRF2ArchiveFile(branchPath, filenameEffectiveDate, exportType, forClassification, false, false, null, null, new HashSet<>(), true, new HashSet<>(), null, null);
 	}
 
 	public void exportRF2ArchiveAsync(ExportConfiguration exportConfiguration) {
@@ -151,7 +154,7 @@ public class ExportService {
 						exportConfiguration.getType(), exportConfiguration.isConceptsAndRelationshipsOnly(), exportConfiguration.isLanguageOnly(),
 						exportConfiguration.isUnpromotedChangesOnly(),
 						exportConfiguration.getTransientEffectiveTime(), exportConfiguration.getStartEffectiveTime(), exportConfiguration.getModuleIds(),
-						exportConfiguration.isLegacyZipNaming(), exportConfiguration.getRefsetIds(), exportConfiguration.getId());
+						exportConfiguration.isLegacyZipNaming(), exportConfiguration.getRefsetIds(), exportConfiguration.getLanguageRefsetIds(), exportConfiguration.getId());
 
 				exportConfiguration.setExportFilePath(file.getAbsolutePath());
 				exportConfiguration.setStatus(ExportStatus.COMPLETED);
@@ -194,7 +197,7 @@ public class ExportService {
 
 	private File exportRF2ArchiveFile(String branchPath, String filenameEffectiveDate, RF2Type exportType, boolean forClassification,
 			boolean languageOnly, boolean unpromotedChangesOnly, String transientEffectiveTime, String startEffectiveTime, Set<String> moduleIds,
-			boolean legacyZipNaming, Set<String> refsetIds, String exportId) throws ExportException {
+			boolean legacyZipNaming, Set<String> refsetIds, Set<String> languageRefsetIds, String exportId) throws ExportException {
 
 		if (exportType == RF2Type.FULL) {
 			throw new IllegalArgumentException("FULL RF2 export is not implemented.");
@@ -251,7 +254,7 @@ public class ExportService {
 
 				// Write Reference Sets
 				exportRefsetMembers(branchPath, filenameEffectiveDate, exportType, forClassification, languageOnly, transientEffectiveTime, startEffectiveTime,
-						moduleIds, refsetIds, allContentBranchCriteria, selectionBranchCriteria, refsetOnlyExport, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
+						moduleIds, refsetIds, languageRefsetIds, allContentBranchCriteria, selectionBranchCriteria, refsetOnlyExport, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name);
 			}
 
 			logger.info("{} export of {}{} complete in {} seconds.", exportType, branchPath, exportStr, TimerUtil.secondsSince(startTime));
@@ -323,7 +326,7 @@ public class ExportService {
 	}
 
 	private void exportRefsetMembers(String branchPath, String filenameEffectiveDate, RF2Type exportType, boolean forClassification, boolean languageOnly, String transientEffectiveTime,
-			String startEffectiveTime, Set<String> moduleIds, Set<String> refsetIds, BranchCriteria allContentBranchCriteria, BranchCriteria selectionBranchCriteria, boolean refsetOnlyExport, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
+			String startEffectiveTime, Set<String> moduleIds, Set<String> refsetIds, Set<String> languageRefsetIds, BranchCriteria allContentBranchCriteria, BranchCriteria selectionBranchCriteria, boolean refsetOnlyExport, String entryDirectoryPrefix, ZipOutputStream zipOutputStream, String codeSystemRF2Name) {
 
 		List<ReferenceSetType> referenceSetTypes = getReferenceSetTypes(allContentBranchCriteria.getEntityBranchCriteria(ReferenceSetType.class)).stream()
 				.filter(type -> !forClassification || refsetTypesRequiredForClassification.contains(type.getConceptId()))
@@ -337,6 +340,9 @@ public class ExportService {
 			List<Long> refsetsOfThisType = new ArrayList<>(queryService.findDescendantIdsAsUnion(allContentBranchCriteria, true, Collections.singleton(Long.parseLong(referenceSetType.getConceptId()))));
 			refsetsOfThisType.add(Long.parseLong(referenceSetType.getConceptId()));
 			for (Long refsetToExport : refsetsOfThisType) {
+				if (languageOnly && !CollectionUtils.isEmpty(languageRefsetIds) && !languageRefsetIds.contains(refsetToExport.toString())) {
+					continue;
+				}
 				exportRefset(branchPath, filenameEffectiveDate, exportType, transientEffectiveTime, startEffectiveTime, moduleIds, refsetIds, refsetOnlyExport, entryDirectoryPrefix, zipOutputStream, codeSystemRF2Name, referenceSetType, refsetToExport, memberBranchCriteria, refsetsOfThisType);
 			}
 		}

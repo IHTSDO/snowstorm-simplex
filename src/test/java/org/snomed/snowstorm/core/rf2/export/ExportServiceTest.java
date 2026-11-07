@@ -1018,4 +1018,43 @@ class ExportServiceTest extends AbstractTest {
 		return tempFile;
 	}
 
+	@Test
+	void languageRefsetIdsRequiresLanguageOnly() {
+		ExportConfiguration exportConfiguration = new ExportConfiguration("MAIN", RF2Type.DELTA);
+		exportConfiguration.setLanguageRefsetIds(Set.of(Concepts.GB_EN_LANG_REFSET));
+		assertThrows(IllegalArgumentException.class, () -> exportService.createJob(exportConfiguration));
+	}
+
+	@Test
+	void exportLanguageOnlyWithLanguageRefsetIds() throws Exception {
+		String gbLangFile = "SnomedCT_Export/Delta/Refset/Language/der2_cRefset_Language900000000000508004Delta_INT_20210731.txt";
+
+		List<String> gbEntries = getLanguageOnlyExportEntryNames(Set.of(Concepts.GB_EN_LANG_REFSET));
+		assertTrue(gbEntries.contains(gbLangFile), "Selected GB language refset should be exported: " + gbEntries);
+		assertTrue(gbEntries.stream().noneMatch(name -> name.contains("Relationship")), "Relationships should not be exported: " + gbEntries);
+
+		List<String> usEntries = getLanguageOnlyExportEntryNames(Set.of(Concepts.US_EN_LANG_REFSET));
+		assertTrue(usEntries.stream().noneMatch(name -> name.contains("/Refset/")), "Unselected language refsets should not be exported: " + usEntries);
+	}
+
+	private List<String> getLanguageOnlyExportEntryNames(Set<String> languageRefsetIds) throws Exception {
+		File exportFile = getTempFile("export", ".zip");
+		try (FileOutputStream outputStream = new FileOutputStream(exportFile)) {
+			ExportConfiguration exportConfiguration = new ExportConfiguration("MAIN", RF2Type.DELTA);
+			exportConfiguration.setFilenameEffectiveDate("20210731");
+			exportConfiguration.setLanguageOnly(true);
+			exportConfiguration.setLanguageRefsetIds(languageRefsetIds);
+			exportService.createJob(exportConfiguration);
+			exportService.exportRF2Archive(exportConfiguration, outputStream);
+		}
+		List<String> names = new ArrayList<>();
+		try (ZipInputStream zipInputStream = new ZipInputStream(new FileInputStream(exportFile))) {
+			ZipEntry entry;
+			while ((entry = zipInputStream.getNextEntry()) != null) {
+				names.add(entry.getName());
+			}
+		}
+		return names;
+	}
+
 }

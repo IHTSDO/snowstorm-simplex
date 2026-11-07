@@ -55,6 +55,9 @@ public class ExportConfiguration {
 	@Schema(description = "If refsetIds are included, this indicates that the export will be a refset-only export.")
 	private Set<String> refsetIds;
 
+	@Schema(description = "Optional. Restricts a languageOnly export to these language reference sets. Can only be used in combination with languageOnly = true.")
+	private Set<String> languageRefsetIds;
+
 	@Schema(defaultValue = "PENDING")
 	private ExportStatus status;
 
@@ -175,6 +178,14 @@ public class ExportConfiguration {
 
 	public void setRefsetIds(Set<String> refsetIds) {
 		this.refsetIds = refsetIds;
+	}
+
+	public Set<String> getLanguageRefsetIds() {
+		return languageRefsetIds;
+	}
+
+	public void setLanguageRefsetIds(Set<String> languageRefsetIds) {
+		this.languageRefsetIds = languageRefsetIds;
 	}
 
 	public ExportStatus getStatus() {

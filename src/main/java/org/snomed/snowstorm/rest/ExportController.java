@@ -26,7 +26,8 @@ public class ExportController {
 
     @Operation(summary = "Create an export job.",
 			description = "Create a job to export an RF2 archive. " +
-					"The 'location' response header contain the URL, including the identifier, of the new resource.")
+					"The 'location' response header contain the URL, including the identifier, of the new resource. " +
+					"Language refset IDs (languageRefsetIds) can only be used in combination with the languageOnly flag.")
 	@PostMapping
 	public ResponseEntity<Void> createExportJob(@Valid @RequestBody ExportRequestView exportRequestView) {
 		String id = exportService.createJob(exportRequestView);
